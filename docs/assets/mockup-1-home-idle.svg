@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 780" width="1300" height="780" font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif' role="img" aria-label="Mockup 1: archive home, idle"><title>Mockup 1: archive home, idle</title><desc>Archive home with Generate button and list of digests</desc><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#444"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#444"/></marker><marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#888"/></marker><marker id="gs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#888"/></marker><marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#D14343"/></marker><marker id="rs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#D14343"/></marker></defs><rect width="1300" height="780" fill="#FAFAF8"/>
+<text x="20" y="16" font-size="1" font-weight="400" fill="#1F2328" text-anchor="start" ></text>
+<rect x="20" y="20" width="940" height="740" rx="12" fill="#fff" stroke="#C9CDD3" stroke-width="1.3"/>
+<rect x="20" y="20" width="940" height="36" rx="12" fill="#ECEEF1" stroke="#C9CDD3" stroke-width="1.3"/>
+<rect x="21" y="44" width="938" height="12" rx="0" fill="#ECEEF1" stroke="none" stroke-width="1"/>
+<circle cx="40" cy="38" r="5.5" fill="#FF5F57" stroke="none" stroke-width="1"/>
+<circle cx="58" cy="38" r="5.5" fill="#FEBC2E" stroke="none" stroke-width="1"/>
+<circle cx="76" cy="38" r="5.5" fill="#28C840" stroke="none" stroke-width="1"/>
+<rect x="110" y="28" width="760" height="20" rx="10" fill="#fff" stroke="#D0D7DE" stroke-width="1"/>
+<text x="490.0" y="42" font-size="11" font-weight="400" fill="#59636E" text-anchor="middle" >127.0.0.1:8000/</text>
+<text x="50" y="96" font-size="22" font-weight="700" fill="#1F2328" text-anchor="start" >AI Adoption Daily</text>
+<circle cx="710" cy="91" r="4.5" fill="#1A7F37" stroke="none" stroke-width="1"/>
+<text x="720" y="95" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >Last run: Oct 16, 9:12 AM · Success</text>
+<line x1="20" y1="118" x2="960" y2="118" stroke="#D0D7DE" stroke-width="1"/>
+<rect x="50" y="142" width="340" height="44" rx="8" fill="#1F4FD8" stroke="none" stroke-width="1"/>
+<text x="220" y="169" font-size="14" font-weight="600" fill="#fff" text-anchor="middle" >Generate digest for Thu, Oct 15</text>
+<text x="410" y="169" font-size="12" font-weight="400" fill="#8B949E" text-anchor="start" >Covers Oct 15, 12:00 AM – 11:59 PM</text>
+<text x="50" y="272" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >All digests</text>
+<rect x="50" y="284" width="880" height="88" rx="8" fill="#fff" stroke="#D0D7DE" stroke-width="1"/>
+<text x="70" y="312" font-size="15" font-weight="700" fill="#1F2328" text-anchor="start" >Wed, Oct 14</text>
+<rect x="170" y="298" width="58" height="20" rx="10" fill="#DAF4E0" stroke="none" stroke-width="1"/>
+<text x="199" y="312" font-size="10.5" font-weight="700" fill="#1A7F37" text-anchor="middle" >LATEST</text>
+<text x="70" y="336" font-size="14" font-weight="600" fill="#1F2328" text-anchor="start" >Sample headline: governance and agent oversight take center stage</text>
+<text x="70" y="356" font-size="12.5" font-weight="400" fill="#59636E" text-anchor="start" >Sample one-line preview of the first sentence of the digest body…</text>
+<text x="910" y="312" font-size="12" font-weight="400" fill="#59636E" text-anchor="end" >2 min read</text>
+<text x="910" y="332" font-size="11" font-weight="400" fill="#8B949E" text-anchor="end" >Generated Oct 15, 8:41 AM</text>
+<rect x="50" y="380" width="880" height="88" rx="8" fill="#fff" stroke="#D0D7DE" stroke-width="1"/>
+<text x="70" y="408" font-size="15" font-weight="700" fill="#1F2328" text-anchor="start" >Tue, Oct 13</text>
+<text x="70" y="432" font-size="14" font-weight="600" fill="#1F2328" text-anchor="start" >Sample headline: vendors converge on agent platforms</text>
+<text x="70" y="452" font-size="12.5" font-weight="400" fill="#59636E" text-anchor="start" >Sample one-line preview of the first sentence of the digest body…</text>
+<text x="910" y="408" font-size="12" font-weight="400" fill="#59636E" text-anchor="end" >2 min read</text>
+<text x="910" y="428" font-size="11" font-weight="400" fill="#8B949E" text-anchor="end" >Generated Oct 14, 10:03 AM</text>
+<rect x="50" y="476" width="880" height="88" rx="8" fill="#fff" stroke="#D0D7DE" stroke-width="1"/>
+<text x="70" y="504" font-size="15" font-weight="700" fill="#1F2328" text-anchor="start" >Mon, Oct 12</text>
+<text x="70" y="528" font-size="14" font-weight="600" fill="#1F2328" text-anchor="start" >Sample headline: skills and workforce planning in focus</text>
+<text x="70" y="548" font-size="12.5" font-weight="400" fill="#59636E" text-anchor="start" >Sample one-line preview of the first sentence of the digest body…</text>
+<text x="910" y="504" font-size="12" font-weight="400" fill="#59636E" text-anchor="end" >2 min read</text>
+<text x="910" y="524" font-size="11" font-weight="400" fill="#8B949E" text-anchor="end" >Generated Oct 13, 9:30 AM</text>
+<text x="50" y="728" font-size="11" font-weight="400" fill="#8B949E" text-anchor="start" >Illustrative sample content only. Headlines and text are placeholders, not real news.</text>
+<circle cx="410" cy="136" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="410" y="140.5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >1</text>
+<circle cx="692" cy="91" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="692" y="95.5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >2</text>
+<circle cx="242" cy="300" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="242" y="304.5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >3</text>
+<circle cx="60" cy="296" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="60" y="300.5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >4</text>
+<circle cx="60" cy="386" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="60" y="390.5" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >5</text>
+<text x="990" y="60" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Screen 1 · Archive home (idle)</text>
+<circle cx="1001" cy="82" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="1001" y="86" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >1</text>
+<text x="1022" y="86" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >Generate button. Label shows the</text>
+<text x="1022" y="102" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >target date: yesterday, computed</text>
+<text x="1022" y="118" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >by the server at click time.</text>
+<text x="1022" y="134" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >Always enabled unless a run is</text>
+<text x="1022" y="150" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >active.</text>
+<circle cx="1001" cy="174" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="1001" y="178" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >2</text>
+<text x="1022" y="178" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >Run status: last run time and</text>
+<text x="1022" y="194" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >result. Click opens the run</text>
+<text x="1022" y="210" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >summary.</text>
+<circle cx="1001" cy="234" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="1001" y="238" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >3</text>
+<text x="1022" y="238" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >LATEST badge marks the newest</text>
+<text x="1022" y="254" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >digest.</text>
+<circle cx="1001" cy="278" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="1001" y="282" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >4</text>
+<text x="1022" y="282" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >Each row is labeled by the date of</text>
+<text x="1022" y="298" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >the news it covers, not by the day</text>
+<text x="1022" y="314" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >it was generated.</text>
+<circle cx="1001" cy="338" r="11" fill="#D9363E" stroke="none" stroke-width="1"/>
+<text x="1001" y="342" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" >5</text>
+<text x="1022" y="342" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >Row: headline, one-line preview,</text>
+<text x="1022" y="358" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >reading time, and generated-at as</text>
+<text x="1022" y="374" font-size="12" font-weight="400" fill="#59636E" text-anchor="start" >secondary text.</text>
+</svg>

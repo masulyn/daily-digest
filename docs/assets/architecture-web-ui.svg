@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 985" width="1300" height="985" font-family='-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif' role="img" aria-label="AI Adoption Daily system architecture"><title>AI Adoption Daily system architecture</title><desc>Browser to local web app to Coordinator; Researcher is the only agent with network access (RSS feeds); Synthesizer and Reviewer loop; Writer; Publisher; local data stores; Anthropic API.</desc><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#444"/></marker><marker id="as" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#444"/></marker><marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#888"/></marker><marker id="gs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#888"/></marker><marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#D14343"/></marker><marker id="rs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M10,0 L0,5 L10,10 z" fill="#D14343"/></marker></defs><rect width="1300" height="985" fill="#FAFAF8"/>
+<text x="40" y="38" font-size="22" font-weight="700" fill="#1F2328" text-anchor="start" >AI Adoption Daily — System Architecture</text>
+<text x="40" y="60" font-size="13" font-weight="400" fill="#59636E" text-anchor="start" >Multi-agent crew, the artifacts they hand off, local data, and external resources</text>
+<rect x="20" y="72" width="940" height="895" rx="14" fill="none" stroke="#9AA4AE" stroke-width="1.2" stroke-dasharray="6 5"/>
+<text x="300" y="108" font-size="11" font-weight="700" fill="#59636E" text-anchor="start" >YOUR MACHINE (all state is local)</text>
+<rect x="40" y="90" width="240" height="60" rx="10" fill="#E8F0FE" stroke="#2F6FDE" stroke-width="1.5"/>
+<text x="160" y="116" font-size="14" font-weight="700" fill="#1F2328" text-anchor="middle" >Browser</text>
+<text x="160" y="134" font-size="11" font-weight="400" fill="#59636E" text-anchor="middle" >single user · desktop or phone</text>
+<rect x="40" y="190" width="240" height="140" rx="10" fill="#E8F0FE" stroke="#2F6FDE" stroke-width="1.5"/>
+<text x="56" y="214" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Local Web App</text>
+<text x="56" y="231" font-size="11" font-weight="400" fill="#59636E" text-anchor="start" >serves 127.0.0.1 only</text>
+<text x="56" y="254" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >• Archive list + reader (read-only)</text>
+<text x="56" y="272" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >• Generate button (POST + CSRF)</text>
+<text x="56" y="290" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >• Progress + last-run status</text>
+<path d="M160,150 L160,190" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="168" y="174" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >HTTP</text>
+<rect x="40" y="350" width="240" height="590" rx="10" fill="#F4F4F1" stroke="#8B949E" stroke-width="1.5"/>
+<text x="264" y="372" font-size="11" font-weight="700" fill="#59636E" text-anchor="end" >LOCAL DATA (disk)</text>
+<rect x="56" y="390" width="208" height="92" rx="8" fill="#fff" stroke="#8B949E" stroke-width="1.2"/>
+<text x="68" y="410" font-size="13" font-weight="700" fill="#1F2328" text-anchor="start" >Newsletters</text>
+<text x="68" y="430" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >one Markdown file per digest,</text>
+<text x="68" y="446" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >keyed by covered date</text>
+<text x="68" y="462" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >(YYYY-MM-DD)</text>
+<rect x="56" y="497" width="208" height="156" rx="8" fill="#fff" stroke="#8B949E" stroke-width="1.2"/>
+<text x="68" y="517" font-size="13" font-weight="700" fill="#1F2328" text-anchor="start" >SQLite database</text>
+<text x="68" y="537" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >• newsletter index</text>
+<text x="68" y="553" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >• seen-items ledger</text>
+<text x="68" y="569" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >• topic memory (last 30 days)</text>
+<text x="68" y="585" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >• run log, run state, lock</text>
+<rect x="56" y="668" width="208" height="110" rx="8" fill="#fff" stroke="#8B949E" stroke-width="1.2"/>
+<text x="68" y="688" font-size="13" font-weight="700" fill="#1F2328" text-anchor="start" >Config files</text>
+<text x="68" y="708" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >• feed list (≥ 15 RSS/Atom)</text>
+<text x="68" y="724" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >• editorial rubric</text>
+<text x="68" y="740" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >• limits, model id, timezone</text>
+<rect x="56" y="793" width="208" height="70" rx="8" fill="#fff" stroke="#8B949E" stroke-width="1.2"/>
+<text x="68" y="813" font-size="13" font-weight="700" fill="#1F2328" text-anchor="start" >Rolling backups</text>
+<text x="68" y="833" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >last 7, taken before each run</text>
+<path d="M100,330 L100,390" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="108" y="346" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >reads</text>
+<rect x="440" y="190" width="440" height="110" rx="10" fill="#EFE9FF" stroke="#6B4FD8" stroke-width="1.5"/>
+<text x="456" y="214" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Coordinator</text>
+<text x="866" y="214" font-size="11" font-weight="400" fill="#59636E" text-anchor="end" >no LLM</text>
+<text x="456" y="238" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Runs when Generate is clicked (yesterday’s full day)</text>
+<text x="456" y="256" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Pre-checks: already exists · in progress · cooldown</text>
+<text x="456" y="274" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Lock · stage status · 20 / 30 min limits · budgets</text>
+<path d="M280,230 L440,230" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="284" y="222" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >generate_digest()</text>
+<path d="M440,270 L280,270" fill="none" stroke="#888" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#g)"/>
+<text x="284" y="286" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >status / progress</text>
+<rect x="425" y="345" width="470" height="145" rx="12" fill="#FFF5F5" stroke="#D14343" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="437" y="361" font-size="10.5" font-weight="700" fill="#B42323" text-anchor="start" >UNTRUSTED CONTENT ZONE · only agent with network access</text>
+<rect x="440" y="370" width="440" height="100" rx="10" fill="#FFF0E6" stroke="#D9622B" stroke-width="1.5"/>
+<text x="456" y="393" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Researcher</text>
+<text x="866" y="393" font-size="11" font-weight="400" fill="#59636E" text-anchor="end" >LLM: relevance scoring only</text>
+<text x="456" y="416" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Fetch feeds → keep target-day items → dedupe against</text>
+<text x="456" y="434" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >ledger → injection screen → score → build CandidateSet</text>
+<path d="M660,490 L660,540" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="670" y="519" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >CandidateSet: plain text, schema-valid</text>
+<rect x="440" y="540" width="190" height="110" rx="10" fill="#E3F6F3" stroke="#1B8F7A" stroke-width="1.5"/>
+<text x="456" y="563" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Synthesizer</text>
+<text x="616" y="563" font-size="11" font-weight="400" fill="#59636E" text-anchor="end" >LLM</text>
+<text x="456" y="586" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >Picks must-knows and</text>
+<text x="456" y="603" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >viewpoints; drafts with a</text>
+<text x="456" y="620" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >per-sentence provenance map</text>
+<rect x="690" y="540" width="190" height="110" rx="10" fill="#E3F6F3" stroke="#1B8F7A" stroke-width="1.5"/>
+<text x="706" y="563" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Reviewer</text>
+<text x="866" y="563" font-size="11" font-weight="400" fill="#59636E" text-anchor="end" >LLM</text>
+<text x="706" y="586" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >Mechanical checks + entail-</text>
+<text x="706" y="603" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >ment check; blocks any</text>
+<text x="706" y="620" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >opinion or unsupported claim</text>
+<path d="M630,580 L690,580" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M690,620 L630,620" fill="none" stroke="#888" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#g)"/>
+<text x="445" y="666" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >Loop ≤ 3 rounds · Draft ⇄ ReviewResult</text>
+<path d="M660,676 L660,710" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="672" y="698" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >approved Draft</text>
+<rect x="440" y="710" width="440" height="90" rx="10" fill="#FFF7DC" stroke="#B88A00" stroke-width="1.5"/>
+<text x="456" y="733" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Writer</text>
+<text x="866" y="733" font-size="11" font-weight="400" fill="#59636E" text-anchor="end" >LLM</text>
+<text x="456" y="756" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Executive tone, 200–500 words, numbered citations;</text>
+<text x="456" y="774" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >rewords only, adds nothing new</text>
+<path d="M660,800 L660,850" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="672" y="830" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >FinalNewsletter</text>
+<rect x="440" y="850" width="440" height="90" rx="10" fill="#FFF7DC" stroke="#B88A00" stroke-width="1.5"/>
+<text x="456" y="873" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Publisher</text>
+<text x="866" y="873" font-size="11" font-weight="400" fill="#59636E" text-anchor="end" >no LLM</text>
+<text x="456" y="896" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Re-validates schema, length, citations, provenance;</text>
+<text x="456" y="914" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >saves atomically; updates the index; records seen items</text>
+<path d="M880,245 L915,245 L915,895 L880,895 M915,450 L880,450 M915,625 L880,625 M915,785 L880,785" fill="none" stroke="#888" stroke-width="1.4" stroke-dasharray="5 4"/>
+<path d="M918,450 L882,450" stroke="none" fill="none" marker-end="url(#g)"/>
+<path d="M918,625 L882,625" stroke="none" fill="none" marker-end="url(#g)"/>
+<path d="M918,785 L882,785" stroke="none" fill="none" marker-end="url(#g)"/>
+<path d="M918,895 L882,895" stroke="none" fill="none" marker-end="url(#g)"/>
+<text transform="translate(942,700) rotate(-90)" font-size="10.5" fill="#59636E">dispatch + validate every handoff</text>
+<path d="M280,415 L425,415" fill="none" stroke="#888" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#g)"/>
+<text x="290" y="396" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >reads feeds, rubric,</text>
+<text x="290" y="408" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >seen-items ledger</text>
+<path d="M280,610 L440,610" fill="none" stroke="#888" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#g)"/>
+<text x="290" y="590" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >reads topic memory</text>
+<path d="M440,895 L280,895" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="290" y="846" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >writes newsletter,</text>
+<text x="290" y="858" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >ledger, topic memory,</text>
+<text x="290" y="870" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >run log</text>
+<rect x="980" y="100" width="290" height="235" rx="10" fill="#FDF0F0" stroke="#D14343" stroke-width="1.3"/>
+<text x="996" y="124" font-size="12" font-weight="700" fill="#B42323" text-anchor="start" >SAFETY GUARDS</text>
+<text x="996" y="148" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >• Web text is data, never instructions</text>
+<text x="996" y="167" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >• Only the Researcher touches the network</text>
+<text x="996" y="186" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >• Every handoff validated against schema</text>
+<text x="996" y="205" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >• Every sentence maps to a source item</text>
+<text x="996" y="224" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >• Agents add no opinions or outside facts</text>
+<text x="996" y="243" font-size="11.5" font-weight="400" fill="#1F2328" text-anchor="start" >• Publisher re-validates; output sanitized</text>
+<line x1="996" y1="268" x2="1254" y2="268" stroke="#E5B8B8" stroke-width="1"/>
+<path d="M996,285 L1030,285" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1038" y="289" font-size="11" font-weight="400" fill="#59636E" text-anchor="start" >data handoff</text>
+<path d="M996,303 L1030,303" fill="none" stroke="#888" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#g)"/>
+<text x="1038" y="307" font-size="11" font-weight="400" fill="#59636E" text-anchor="start" >control / status</text>
+<line x1="996" y1="321" x2="1030" y2="321" stroke="#D14343" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1038" y="325" font-size="11" font-weight="400" fill="#59636E" text-anchor="start" >untrusted zone</text>
+<text x="980" y="356" font-size="11" font-weight="700" fill="#59636E" text-anchor="start" >EXTERNAL (outside your machine)</text>
+<rect x="980" y="365" width="290" height="105" rx="10" fill="#FBE9F1" stroke="#B03A7A" stroke-width="1.5"/>
+<text x="996" y="389" font-size="13" font-weight="700" fill="#1F2328" text-anchor="start" >RSS / Atom feeds (public web)</text>
+<text x="996" y="410" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >≥ 15 configured sources</text>
+<text x="996" y="427" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >robots.txt · ≤ 1 request/s per domain</text>
+<text x="996" y="444" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >size + redirect caps · private-IP block</text>
+<path d="M895,418 L980,418" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#as)"/>
+<text x="938" y="410" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="middle" >HTTPS</text>
+<rect x="980" y="540" width="290" height="250" rx="10" fill="#FBE9F1" stroke="#B03A7A" stroke-width="1.5"/>
+<text x="996" y="564" font-size="14" font-weight="700" fill="#1F2328" text-anchor="start" >Anthropic API</text>
+<text x="996" y="586" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Claude Sonnet 5.5 (model id in config)</text>
+<text x="996" y="604" font-size="12" font-weight="400" fill="#1F2328" text-anchor="start" >Reasoning effort: medium</text>
+<text x="996" y="634" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >Called by: Researcher (relevance</text>
+<text x="996" y="651" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >scoring), Synthesizer, Reviewer, Writer</text>
+<text x="996" y="682" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >Fetched text is wrapped as quoted data;</text>
+<text x="996" y="699" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >every output must match its schema.</text>
+<text x="996" y="730" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >Token + call budgets enforced by the</text>
+<text x="996" y="747" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >Coordinator (80 % → degraded mode).</text>
+<path d="M895,484 L980,556" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#as)"/>
+<path d="M880,575 L980,575" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#as)"/>
+<path d="M880,755 L980,755" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#as)"/>
+<rect x="980" y="830" width="290" height="110" rx="10" fill="#fff" stroke="#8B949E" stroke-width="1.3"/>
+<text x="996" y="854" font-size="13" font-weight="700" fill="#1F2328" text-anchor="start" >API key</text>
+<text x="996" y="874" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >Environment variable or OS keychain.</text>
+<text x="996" y="891" font-size="11.5" font-weight="400" fill="#59636E" text-anchor="start" >Never in config, logs, prompts, or output.</text>
+<path d="M1125,830 L1125,790" fill="none" stroke="#444" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1135" y="815" font-size="10.5" font-weight="400" fill="#59636E" text-anchor="start" >auth</text>
+</svg>
