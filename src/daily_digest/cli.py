@@ -3,11 +3,13 @@
 import argparse
 import os
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from .config import DEFAULT_FEEDS_PATH, data_dir, load_sources
 from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
+from .graph import run_digest
 from .ingest import ingest
 from .robots import RobotsChecker
 from .store import Store
@@ -49,6 +51,18 @@ def run_extract(db_path: Path, limit: int | None) -> int:
     return 1 if report.considered and not report.extracted else 0
 
 
+def run_draft(db_path: Path, target: date) -> int:
+    """Print stub summaries for the day's unseen items from the local database. Fetches nothing."""
+    with Store(db_path) as store:
+        state = run_digest(store, target)
+    for summary in state.summaries:
+        print("\n".join(f"- {point}" for point in summary.key_points))
+        print(f"  {summary.source_url}")
+    for note in state.notes:
+        print(note)
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="daily-digest")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -58,7 +72,16 @@ def main() -> None:
     e = sub.add_parser("extract", help="fetch full article text for items whose feed text is too short")
     e.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     e.add_argument("--limit", type=int, default=None, help="maximum number of articles to fetch")
+    d = sub.add_parser("draft", help="print stub summaries for one day's stored items (no fetching)")
+    d.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
+    d.add_argument(
+        "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",
+        help="digest day, local time (default: yesterday)",
+    )
     args = parser.parse_args()
+    if args.command == "draft":
+        target = args.date or date.today() - timedelta(days=1)
+        raise SystemExit(run_draft(args.db or data_dir() / "digest.db", target))
     if args.command == "extract":
         raise SystemExit(run_extract(args.db or data_dir() / "digest.db", args.limit))
     if args.command == "ingest":

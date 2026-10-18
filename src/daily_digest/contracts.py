@@ -35,3 +35,11 @@ class CandidateItem(BaseModel):
     extract: str = Field(max_length=1200)
     article_text: str | None = Field(default=None, max_length=3000)  # from extraction, if run
     content_hash: str
+
+
+class ItemSummary(BaseModel):
+    """A short summary of one item, with the URL it came from."""
+
+    item_id: str
+    key_points: list[str]
+    source_url: str
