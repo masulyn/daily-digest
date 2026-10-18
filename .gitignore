@@ -10,3 +10,6 @@ wheels/
 .venv
 .env
 data/
+
+# Claude Code local overrides
+.claude/settings.local.json
