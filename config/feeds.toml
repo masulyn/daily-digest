@@ -1,0 +1,34 @@
+# Starter RSS feeds for enterprise AI adoption (FR-1.3).
+# Tested for reachability and robots.txt on Oct 14-15, 2026.
+# Details: the research notes on enterprise AI feeds.
+
+[[feeds]]
+name = "CIO.com AI"
+url = "https://www.cio.com/artificial-intelligence/feed/"
+category = "enterprise IT press"
+enabled = true
+
+[[feeds]]
+name = "MIT Sloan Management Review AI"
+url = "https://sloanreview.mit.edu/tag/artificial-intelligence/feed/"
+category = "management research"
+enabled = true
+
+[[feeds]]
+name = "MIT Technology Review AI"
+url = "https://www.technologyreview.com/topic/artificial-intelligence/feed"
+category = "technology analysis"
+enabled = true
+
+[[feeds]]
+name = "Google Cloud AI blog"
+url = "https://cloudblog.withgoogle.com/products/ai-machine-learning/rss/"
+category = "vendor blog"
+enabled = true
+
+# Headline and snippet only: needs article extraction (FR-3.6).
+[[feeds]]
+name = "CIO Dive"
+url = "https://www.ciodive.com/feeds/news/"
+category = "enterprise IT press"
+enabled = true
