@@ -18,6 +18,7 @@ from .normalize import (
     content_hash,
     item_id,
     make_extract,
+    needs_extraction,
     strip_html,
 )
 from .robots import RobotsChecker
@@ -47,18 +48,22 @@ def _body_text(entry: feedparser.FeedParserDict) -> str:
     return strip_html(html)
 
 
-def entry_to_item(source_name: str, entry: feedparser.FeedParserDict) -> CandidateItem | None:
+def parse_entry(
+    source_name: str, entry: feedparser.FeedParserDict
+) -> tuple[CandidateItem, bool] | None:
+    """The item, and whether its article should be fetched later; None if unusable."""
     link = (entry.get("link") or "").strip()
     title = strip_html(entry.get("title", ""))
     published = _published(entry)
     if not link or not title or published is None:
         return None
     url = canonicalize_url(link)
-    extract = make_extract(_body_text(entry))
+    body = _body_text(entry)
+    extract = make_extract(body)
     # Headline-only feeds have no extract; hashing the title alone would merge
     # unrelated posts that share a title (such as a recurring "Weekly roundup").
     try:
-        return CandidateItem(
+        item = CandidateItem(
             id=item_id(url),
             source=source_name,
             canonical_url=url,
@@ -69,6 +74,7 @@ def entry_to_item(source_name: str, entry: feedparser.FeedParserDict) -> Candida
         )
     except ValidationError:
         return None
+    return item, needs_extraction(body)
 
 
 def ingest(sources: list[Source], fetch: FetchFn, robots: RobotsChecker, store: Store) -> list[FeedReport]:
@@ -94,10 +100,10 @@ def ingest(sources: list[Source], fetch: FetchFn, robots: RobotsChecker, store: 
         with store.transaction():
             for entry in feed.entries:
                 report.entries += 1
-                item = entry_to_item(source.name, entry)
-                if item is None:
+                parsed = parse_entry(source.name, entry)
+                if parsed is None:
                     report.skipped += 1
-                elif store.add_if_new(item):
+                elif store.add_if_new(parsed[0], needs_extraction=parsed[1]):
                     report.stored += 1
                 else:
                     report.duplicates += 1

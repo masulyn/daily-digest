@@ -25,9 +25,9 @@ url = "https://cloudblog.withgoogle.com/products/ai-machine-learning/rss/"
 category = "vendor blog"
 enabled = true
 
-# Headline and snippet only: needs article extraction.
+# Replaced CIO Dive: its article pages block our HTTP client, so only headlines were usable.
 [[feeds]]
-name = "CIO Dive"
-url = "https://www.ciodive.com/feeds/news/"
+name = "Computerworld generative AI"
+url = "https://www.computerworld.com/generative-ai/feed/"
 category = "enterprise IT press"
 enabled = true

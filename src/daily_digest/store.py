@@ -41,7 +41,28 @@ _MIGRATIONS = [
     PRAGMA user_version = 1;
     COMMIT;
     """,
+    """
+    BEGIN;
+    ALTER TABLE items ADD COLUMN article_text TEXT;
+    ALTER TABLE items ADD COLUMN needs_extraction INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE items ADD COLUMN extraction_attempted_at TEXT;
+    ALTER TABLE items ADD COLUMN extraction_error TEXT;
+    -- Rows stored before this version are judged by the length of their stored extract only;
+    -- unlike new rows, a long extract that ends like a teaser is not flagged.
+    UPDATE items SET needs_extraction = CASE WHEN length(extract) < 300 THEN 1 ELSE 0 END;
+    CREATE INDEX idx_items_pending ON items(needs_extraction, extraction_attempted_at);
+    PRAGMA user_version = 2;
+    COMMIT;
+    """,
+    """
+    BEGIN;
+    ALTER TABLE items ADD COLUMN extraction_attempts INTEGER NOT NULL DEFAULT 0;
+    UPDATE items SET extraction_attempts = 1 WHERE extraction_attempted_at IS NOT NULL;
+    PRAGMA user_version = 3;
+    COMMIT;
+    """,
 ]
+MAX_EXTRACTION_ATTEMPTS = 3
 
 
 def _utc(moment: datetime) -> str:
@@ -87,14 +108,14 @@ class Store:
             raise
         self._db.execute("COMMIT")
 
-    def add_if_new(self, item: CandidateItem) -> bool:
+    def add_if_new(self, item: CandidateItem, needs_extraction: bool = False) -> bool:
         """Store the item unless its URL or content hash is already stored.
 
         Returns True if stored, False if it was a duplicate.
         """
         cursor = self._db.execute(
             "INSERT OR IGNORE INTO items (id, source, canonical_url, content_hash, title,"
-            " published_at, extract, first_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " published_at, extract, first_seen_at, needs_extraction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 item.id,
                 item.source,
@@ -104,6 +125,7 @@ class Store:
                 _utc(item.published),
                 item.extract,
                 _utc(datetime.now(timezone.utc)),
+                int(needs_extraction),
             ),
         )
         return cursor.rowcount == 1
@@ -130,7 +152,7 @@ class Store:
             " WHERE s.canonical_url = items.canonical_url OR s.content_hash = items.content_hash)"
         )
         rows = self._db.execute(
-            "SELECT id, source, canonical_url, title, published_at, extract, content_hash"
+            "SELECT id, source, canonical_url, title, published_at, extract, content_hash, article_text"
             f" FROM items WHERE published_at >= ? AND published_at < ?{unseen}"
             " ORDER BY published_at DESC",
             (_utc(start), _utc(end)),
@@ -139,6 +161,40 @@ class Store:
             CandidateItem(
                 id=r[0], source=r[1], canonical_url=r[2], title=r[3],
                 published=datetime.fromisoformat(r[4]), extract=r[5], content_hash=r[6],
+                article_text=r[7],
             )
             for r in rows
         ]
+
+    def pending_extraction(self, limit: int | None = None) -> list[tuple[str, str]]:
+        """(id, URL) of items flagged for extraction that have not been attempted, newest first."""
+        sql = (
+            "SELECT id, canonical_url FROM items WHERE needs_extraction = 1"
+            " AND article_text IS NULL AND extraction_attempted_at IS NULL"
+            " AND extraction_attempts < ? ORDER BY published_at DESC"
+        )
+        params: tuple = (MAX_EXTRACTION_ATTEMPTS,)
+        if limit is not None:
+            sql += " LIMIT ?"
+            params += (limit,)
+        return [(r[0], r[1]) for r in self._db.execute(sql, params).fetchall()]
+
+    def save_article_text(self, item_id: str, text: str) -> None:
+        self._db.execute(
+            "UPDATE items SET article_text = ?, extraction_attempted_at = ?, extraction_error = NULL"
+            " WHERE id = ?",
+            (text, _utc(datetime.now(timezone.utc)), item_id),
+        )
+
+    def record_extraction_failure(self, item_id: str, code: str, *, final: bool) -> None:
+        """Record a failed attempt.
+
+        A final failure (the page is blocked, gone, or has no article) closes the item. A
+        temporary one leaves it pending for the next run, until MAX_EXTRACTION_ATTEMPTS.
+        """
+        self._db.execute(
+            "UPDATE items SET extraction_attempts = extraction_attempts + 1, extraction_error = ?,"
+            " extraction_attempted_at = CASE WHEN ? OR extraction_attempts + 1 >= ? THEN ? END"
+            " WHERE id = ?",
+            (code, int(final), MAX_EXTRACTION_ATTEMPTS, _utc(datetime.now(timezone.utc)), item_id),
+        )

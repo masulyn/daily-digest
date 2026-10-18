@@ -11,6 +11,7 @@ import socket
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from typing import Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -27,6 +28,14 @@ MAX_RETRY_AFTER_SECONDS = 3600
 
 # fetch(url) -> (status code, body bytes)
 FetchFn = Callable[[str], tuple[int, bytes]]
+
+
+class GuardedFetchFn(Protocol):
+    """A fetch that asks `allow(url)` before requesting each hop, redirects included."""
+
+    def __call__(
+        self, url: str, *, allow: Callable[[str], bool] | None = None
+    ) -> tuple[int, bytes]: ...
 # resolve(host, port) -> address strings; empty if the host cannot be resolved
 Resolver = Callable[[str, int], list[str]]
 
@@ -37,6 +46,13 @@ class FetchError(Exception):
     def __init__(self, code: ErrorCode, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class BackoffError(FetchError):
+    """We are waiting out a site's Retry-After; nothing was requested, so nothing was tried."""
+
+    def __init__(self, host: str) -> None:
+        super().__init__(ErrorCode.FEED_UNREACHABLE, f"{host} asked us to back off")
 
 
 def user_agent() -> str:
@@ -115,6 +131,7 @@ class HttpFetcher:
         self._min_interval = min_interval
         self._last_request: dict[str, float] = {}
         self._backoff_until: dict[str, float] = {}
+        self._host_interval: dict[str, float] = {}  # per-site Crawl-delay overrides
 
     def __enter__(self) -> "HttpFetcher":
         return self
@@ -125,12 +142,17 @@ class HttpFetcher:
     def close(self) -> None:
         self._client.close()
 
+    def set_host_delay(self, host: str, seconds: float) -> None:
+        """Wait at least this long between requests to the host (from its Crawl-delay)."""
+        self._host_interval[host] = seconds
+
     def _wait_for_turn(self, host: str) -> None:
         if time.monotonic() < self._backoff_until.get(host, 0.0):
-            raise FetchError(ErrorCode.FEED_UNREACHABLE, f"{host} asked us to back off")
+            raise BackoffError(host)
         elapsed = time.monotonic() - self._last_request.get(host, 0.0)
-        if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+        interval = max(self._min_interval, self._host_interval.get(host, 0.0))
+        if elapsed < interval:
+            time.sleep(interval - elapsed)
         self._last_request[host] = time.monotonic()
 
     def _note_retry_after(self, host: str, response: httpx.Response) -> None:
@@ -141,12 +163,21 @@ class HttpFetcher:
         seconds = min(max(seconds, 0), MAX_RETRY_AFTER_SECONDS)
         self._backoff_until[host] = time.monotonic() + seconds
 
-    def fetch(self, url: str) -> tuple[int, bytes]:
-        """GET a URL. Returns (status code, body). Raises FetchError on unsafe or failed fetches."""
+    def fetch(
+        self, url: str, *, allow: Callable[[str], bool] | None = None
+    ) -> tuple[int, bytes]:
+        """GET a URL. Returns (status code, body). Raises FetchError on unsafe or failed fetches.
+
+        `allow`, if given, is asked about every hop (the first URL and each redirect target)
+        before it is requested, so a redirect cannot reach a host whose rules were never read.
+        It may raise FetchError itself to give a more specific reason.
+        """
         for _ in range(MAX_REDIRECTS + 1):
             address = _public_address(url, self._resolve)
             if address is None:
                 raise FetchError(ErrorCode.UNSAFE_URL, f"blocked unsafe URL: {url}")
+            if allow is not None and not allow(url):
+                raise FetchError(ErrorCode.ROBOTS_DISALLOWED, f"not allowed by robots.txt: {url}")
             host = urlsplit(url).hostname
             self._wait_for_turn(host)
             pinned, headers, extensions = _pin_to_address(url, address)

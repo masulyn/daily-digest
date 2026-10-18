@@ -3,8 +3,12 @@ from daily_digest.normalize import (
     canonicalize_url,
     content_hash,
     make_extract,
+    needs_extraction,
     strip_html,
 )
+
+import pytest
+
 
 
 def test_canonicalize_removes_tracking_fragment_and_trailing_slash():
@@ -44,3 +48,38 @@ def test_make_extract_leaves_short_text_alone():
 def test_content_hash_ignores_case_and_spacing():
     assert content_hash("A  Title", "Some text") == content_hash("a title", "some   TEXT")
     assert content_hash("A title", "x") != content_hash("A title", "y")
+
+
+LONG_TEXT = "This sentence is part of a complete feed article. " * 12  # about 600 characters
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "   ",
+        "A short snippet from a headline-only feed.",
+        LONG_TEXT + "...",
+        LONG_TEXT + "…",
+        LONG_TEXT + "[…]",
+        LONG_TEXT + "[...]",
+        LONG_TEXT + " Read more",
+        LONG_TEXT + " Continue reading →",
+        LONG_TEXT + " The post Some Title appeared first on Some Site.",
+    ],
+)
+def test_short_or_teaser_feed_text_needs_extraction(text):
+    assert needs_extraction(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        LONG_TEXT,
+        LONG_TEXT + " It ended normally.",
+        "Starts with... an ellipsis in the middle. " + LONG_TEXT,
+        "Readers can read more about it later in the year. " + LONG_TEXT,
+    ],
+)
+def test_complete_feed_text_does_not_need_extraction(text):
+    assert not needs_extraction(text)
