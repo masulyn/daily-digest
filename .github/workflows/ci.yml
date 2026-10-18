@@ -22,7 +22,5 @@ jobs:
 
       # Tests must use the mock LLM provider and saved feed fixtures.
       # CI never gets an API key and never calls a paid model.
-      # pytest exits with code 5 when no tests are collected; allow that
-      # until the first tests exist.
       - name: Run tests
-        run: uv run --with pytest pytest || [ $? -eq 5 ]
+        run: uv run pytest
