@@ -14,6 +14,7 @@ class ErrorCode(StrEnum):
     SCHEMA_INVALID = "SCHEMA_INVALID"
     ARTICLE_UNAVAILABLE = "ARTICLE_UNAVAILABLE"  # page missing, blocked, or behind a login
     NO_ARTICLE_TEXT = "NO_ARTICLE_TEXT"  # page loaded but no article body was found
+    CRAWL_DELAY_TOO_LONG = "CRAWL_DELAY_TOO_LONG"  # the site asks for more waiting than we allow
 
 
 class Source(BaseModel):

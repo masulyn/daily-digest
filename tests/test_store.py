@@ -5,7 +5,7 @@ import pytest
 
 from daily_digest.contracts import CandidateItem
 from daily_digest.normalize import content_hash, item_id
-from daily_digest.store import Store
+from daily_digest.store import _MIGRATIONS, Store
 
 DAY_START = datetime(2026, 10, 14, tzinfo=timezone.utc)
 DAY_END = datetime(2026, 10, 15, tzinfo=timezone.utc)
@@ -78,7 +78,7 @@ def test_items_outside_the_window_are_excluded():
 
 def test_new_database_is_versioned():
     store = Store(":memory:")
-    assert store._db.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert store._db.execute("PRAGMA user_version").fetchone()[0] == len(_MIGRATIONS)
 
 
 def test_database_from_before_versioning_is_upgraded(tmp_path):

@@ -13,12 +13,16 @@ from .robots import RobotsChecker
 from .store import Store
 
 
-def run_ingest(db_path: Path, feeds_path: Path) -> int:
+def _warn_if_no_contact() -> None:
     if not os.environ.get("DIGEST_CONTACT"):
         print(
             "warning: DIGEST_CONTACT is not set; site owners cannot reach you from our User-Agent",
             file=sys.stderr,
         )
+
+
+def run_ingest(db_path: Path, feeds_path: Path) -> int:
+    _warn_if_no_contact()
     sources = load_sources(feeds_path)
     with HttpFetcher() as fetcher, Store(db_path) as store:
         robots = RobotsChecker(fetcher.fetch, user_agent())
@@ -32,15 +36,17 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
 
 
 def run_extract(db_path: Path, limit: int | None) -> int:
+    _warn_if_no_contact()
     with HttpFetcher() as fetcher, Store(db_path) as store:
         robots = RobotsChecker(fetcher.fetch, user_agent())
         report = extract_articles(
             store, fetcher.fetch, robots, set_host_delay=fetcher.set_host_delay, limit=limit
         )
-    print(f"Considered {report.considered}, extracted {report.extracted}.")
+    print(f"Considered {report.considered}, extracted {report.extracted}, deferred {report.deferred}.")
     for code, n in sorted(report.failures.items()):
         print(f"  {code}: {n}")
-    return 0
+    # Like ingest: fail only when articles were attempted and none came back.
+    return 1 if report.considered and not report.extracted else 0
 
 
 def main() -> None:

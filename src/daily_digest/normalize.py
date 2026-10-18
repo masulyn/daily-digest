@@ -75,3 +75,19 @@ def content_hash(title: str, body: str) -> str:
 
 def item_id(canonical_url: str) -> str:
     return hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()[:16]
+
+
+MIN_FEED_TEXT_CHARS = 300
+
+# Endings that mean "the rest is on the website". Add a pattern here to teach the app a new one.
+_TEASER_ENDINGS = [
+    re.compile(r"(\.\.\.|…|\[\s*(\.\.\.|…)\s*\])$"),
+    re.compile(r"\b(read more|continue reading|read the full (article|story)|click to read)\b[^.]{0,40}$", re.I),
+    re.compile(r"\bthe post\b.{1,200}\bappeared first on\b.{1,100}$", re.I),
+]
+
+
+def needs_extraction(feed_text: str) -> bool:
+    """True if the feed's own text is too short or reads like a teaser, so the article is worth fetching."""
+    text = feed_text.strip()
+    return len(text) < MIN_FEED_TEXT_CHARS or any(p.search(text) for p in _TEASER_ENDINGS)
