@@ -115,6 +115,7 @@ class HttpFetcher:
         self._min_interval = min_interval
         self._last_request: dict[str, float] = {}
         self._backoff_until: dict[str, float] = {}
+        self._host_interval: dict[str, float] = {}  # per-site Crawl-delay overrides
 
     def __enter__(self) -> "HttpFetcher":
         return self
@@ -125,12 +126,17 @@ class HttpFetcher:
     def close(self) -> None:
         self._client.close()
 
+    def set_host_delay(self, host: str, seconds: float) -> None:
+        """Wait at least this long between requests to the host (from its Crawl-delay)."""
+        self._host_interval[host] = seconds
+
     def _wait_for_turn(self, host: str) -> None:
         if time.monotonic() < self._backoff_until.get(host, 0.0):
             raise FetchError(ErrorCode.FEED_UNREACHABLE, f"{host} asked us to back off")
         elapsed = time.monotonic() - self._last_request.get(host, 0.0)
-        if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+        interval = max(self._min_interval, self._host_interval.get(host, 0.0))
+        if elapsed < interval:
+            time.sleep(interval - elapsed)
         self._last_request[host] = time.monotonic()
 
     def _note_retry_after(self, host: str, response: httpx.Response) -> None:

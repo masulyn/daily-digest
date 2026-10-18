@@ -12,6 +12,8 @@ class ErrorCode(StrEnum):
     FEED_INVALID = "FEED_INVALID"
     RESPONSE_TOO_LARGE = "RESPONSE_TOO_LARGE"
     SCHEMA_INVALID = "SCHEMA_INVALID"
+    ARTICLE_UNAVAILABLE = "ARTICLE_UNAVAILABLE"  # page missing, blocked, or behind a login
+    NO_ARTICLE_TEXT = "NO_ARTICLE_TEXT"  # page loaded but no article body was found
 
 
 class Source(BaseModel):
@@ -30,4 +32,5 @@ class CandidateItem(BaseModel):
     title: str
     published: AwareDatetime
     extract: str = Field(max_length=1200)
+    article_text: str | None = Field(default=None, max_length=3000)  # from extraction, if run
     content_hash: str

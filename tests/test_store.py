@@ -78,7 +78,7 @@ def test_items_outside_the_window_are_excluded():
 
 def test_new_database_is_versioned():
     store = Store(":memory:")
-    assert store._db.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert store._db.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_database_from_before_versioning_is_upgraded(tmp_path):

@@ -20,6 +20,7 @@ from .normalize import (
     make_extract,
     strip_html,
 )
+from .extract import needs_extraction
 from .robots import RobotsChecker
 from .store import Store
 
@@ -97,7 +98,7 @@ def ingest(sources: list[Source], fetch: FetchFn, robots: RobotsChecker, store: 
                 item = entry_to_item(source.name, entry)
                 if item is None:
                     report.skipped += 1
-                elif store.add_if_new(item):
+                elif store.add_if_new(item, needs_extraction=needs_extraction(_body_text(entry))):
                     report.stored += 1
                 else:
                     report.duplicates += 1

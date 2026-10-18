@@ -39,6 +39,15 @@ class RobotsChecker:
         self._cache[origin] = result
         return result
 
+    def crawl_delay(self, url: str) -> float | None:
+        """Seconds the site asks us to wait between requests, if its robots.txt says so."""
+        parts = urlsplit(url)
+        rules = self._rules_for(f"{parts.scheme}://{parts.netloc}")
+        if isinstance(rules, bool):
+            return None
+        delay = rules.crawl_delay(self._user_agent)
+        return float(delay) if delay is not None else None
+
     def allowed(self, url: str) -> bool:
         parts = urlsplit(url)
         rules = self._rules_for(f"{parts.scheme}://{parts.netloc}")
