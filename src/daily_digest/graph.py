@@ -1,4 +1,4 @@
-"""The digest pipeline as a LangGraph graph. For now: load a day's items, write stub summaries.
+"""The digest pipeline as a LangGraph graph.
 
 Nodes are plain functions from state to a partial state update. Only `load_items` touches
 anything outside the state (the local store); nothing here uses the network or a model.
@@ -74,7 +74,7 @@ def build_graph(store: Store):
 def run_digest(store: Store, target: date) -> DigestState:
     """Run the graph for one day. LangGraph returns a dict, so validate it into the state model.
 
-    This is the only check of the final node's output; LangGraph validates each node's input.
+    LangGraph does not validate the last node's output, so this is the only check of it.
     """
     result = build_graph(store).invoke(DigestState(target_date=target))
     return DigestState.model_validate(result)
