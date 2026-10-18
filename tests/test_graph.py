@@ -40,6 +40,15 @@ def test_load_items_returns_only_the_days_unseen_items():
     assert "notes" not in update
 
 
+def test_window_includes_its_start_and_excludes_its_end():
+    store = Store(":memory:")
+    start, end = day_window(DAY)
+    store.add_if_new(item_on("start", start))
+    store.add_if_new(item_on("end", end))
+    update = load_items(DigestState(target_date=DAY), store)
+    assert [i.id for i in update["items"]] == ["start"]
+
+
 def test_load_items_notes_a_quiet_day():
     update = load_items(DigestState(target_date=DAY), Store(":memory:"))
     assert update["items"] == []

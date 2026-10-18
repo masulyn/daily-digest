@@ -72,6 +72,9 @@ def build_graph(store: Store):
 
 
 def run_digest(store: Store, target: date) -> DigestState:
-    """Run the graph for one day. LangGraph returns a dict, so validate it into the state model."""
+    """Run the graph for one day. LangGraph returns a dict, so validate it into the state model.
+
+    This is the only check of the final node's output; LangGraph validates each node's input.
+    """
     result = build_graph(store).invoke(DigestState(target_date=target))
     return DigestState.model_validate(result)
