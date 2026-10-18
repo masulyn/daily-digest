@@ -10,8 +10,8 @@
 
 ## 1. Product Summary & Vision
 
-- **App Name:** AI Adoption Daily *(working title)*
-- **Purpose & Vision:** Enterprise AI leaders are accountable for driving AI adoption but cannot read the volume of podcasts, blogs, news, and discussion threads produced every day. AI Adoption Daily is an on-demand daily briefing. When the user runs **generate** (a human-triggered command; no scheduler, no approval step), it scans a curated set of sources for the previous full day (local midnight to midnight), selects only what is new and decision-relevant, and publishes one executive-grade, strictly source-grounded newsletter of 200–500 words with citations. The vision is that a leader reads one page in about two minutes and knows the must-knows plus the one or two non-obvious viewpoints worth considering.
+- **App Name:** Daily Digest *(working title)*
+- **Purpose & Vision:** Enterprise AI leaders are accountable for driving AI adoption but cannot read the volume of podcasts, blogs, news, and discussion threads produced every day. Daily Digest is an on-demand daily briefing. When the user runs **generate** (a human-triggered command; no scheduler, no approval step), it scans a curated set of sources for the previous full day (local midnight to midnight), selects only what is new and decision-relevant, and publishes one executive-grade, strictly source-grounded newsletter of 200–500 words with citations. The vision is that a leader reads one page in about two minutes and knows the must-knows plus the one or two non-obvious viewpoints worth considering.
 - **Target Persona:** Enterprise AI leaders (CAIO, VP/Head of AI, Director of AI Transformation) at large technology companies, plus anyone interested in AI adoption strategy.
   - *Environment:* Time-poor, reads on a laptop or phone in the first minutes of the workday, and is skeptical of hype.
   - *Constraints:* Wants no more than about two minutes of reading, an executive tone (no jargon-for-jargon's-sake, no hype, no filler), and verifiable sourcing for any surprising claim.

@@ -1,4 +1,4 @@
-# DESIGN DOC: AI Adoption Daily
+# DESIGN DOC: Daily Digest
 
 > **Companion doc:** [PRD.md](PRD.md) defines what the product must do and why. This document describes how it is built. Requirement IDs (FR-x.y, NFR-n) refer to the PRD.
 
@@ -6,7 +6,7 @@
 
 ## 1. Overview and stack decisions
 
-AI Adoption Daily is a local Python application. A human runs `generate`; a Coordinator runs a multi-agent pipeline (Researcher, Synthesizer, Reviewer, Writer, Publisher) that turns the previous day's RSS items into one cited, source-grounded Markdown digest for enterprise AI leaders.
+Daily Digest is a local Python application. A human runs `generate`; a Coordinator runs a multi-agent pipeline (Researcher, Synthesizer, Reviewer, Writer, Publisher) that turns the previous day's RSS items into one cited, source-grounded Markdown digest for enterprise AI leaders.
 
 | Decision | Choice | Why |
 |---|---|---|
