@@ -1,18 +1,16 @@
-"""Shared data contracts (FR-1.1, FR-1.5). Every handoff is validated against these."""
+"""Shared data contracts. Every handoff between components is validated against these."""
 
-from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class ErrorCode(StrEnum):
-    """Error taxonomy shared by all agents (FR-1.5). More codes are added as needed."""
-
     FEED_UNREACHABLE = "FEED_UNREACHABLE"
     ROBOTS_DISALLOWED = "ROBOTS_DISALLOWED"
     UNSAFE_URL = "UNSAFE_URL"
     FEED_INVALID = "FEED_INVALID"
+    RESPONSE_TOO_LARGE = "RESPONSE_TOO_LARGE"
     SCHEMA_INVALID = "SCHEMA_INVALID"
 
 
@@ -30,6 +28,6 @@ class CandidateItem(BaseModel):
     source: str
     canonical_url: str
     title: str
-    published: datetime  # timezone-aware, UTC
+    published: AwareDatetime
     extract: str = Field(max_length=1200)
     content_hash: str

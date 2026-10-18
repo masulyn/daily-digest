@@ -1,5 +1,6 @@
-"""Load the feed list from config/feeds.toml (FR-1.2, FR-1.3)."""
+"""Load the feed list and resolve where local data lives."""
 
+import os
 import tomllib
 from pathlib import Path
 
@@ -21,3 +22,8 @@ def load_sources(path: Path = DEFAULT_FEEDS_PATH) -> list[Source]:
         data = tomllib.load(f)
     parsed = _FeedsFile.model_validate(data)
     return [s for s in parsed.feeds if s.enabled]
+
+
+def data_dir() -> Path:
+    """Where the database lives. Override with DIGEST_DATA_DIR."""
+    return Path(os.environ.get("DIGEST_DATA_DIR", PROJECT_ROOT / "data"))

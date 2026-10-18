@@ -1,16 +1,16 @@
-"""robots.txt checks (NFR-2).
+"""robots.txt checks.
 
-Python's built-in RobotFileParser treats a 401 or 403 on robots.txt as "everything
+Python's built-in RobotFileParser.read() treats a 401 or 403 on robots.txt as "everything
 is disallowed". The standard (RFC 9309) says a 4xx means robots.txt is unavailable and
-the crawler may proceed, while a server error means be cautious. We follow the standard.
+the crawler may proceed, while a server error means be cautious. We fetch the file
+ourselves and follow the standard, except that 429 is treated as a server-side
+"slow down" rather than as a missing file.
 """
 
-from collections.abc import Callable
-from urllib.robotparser import RobotFileParser
 from urllib.parse import urlsplit
+from urllib.robotparser import RobotFileParser
 
-# fetch(url) -> (status code, body bytes)
-FetchFn = Callable[[str], tuple[int, bytes]]
+from .fetch import FetchError, FetchFn
 
 
 class RobotsChecker:
@@ -25,17 +25,17 @@ class RobotsChecker:
             return self._cache[origin]
         try:
             status, body = self._fetch(f"{origin}/robots.txt")
-        except Exception:
+        except FetchError:
             result: RobotFileParser | bool = False  # cannot tell: be cautious
         else:
             if 200 <= status < 300:
                 parser = RobotFileParser()
                 parser.parse(body.decode("utf-8", errors="replace").splitlines())
                 result = parser
-            elif 400 <= status < 500:
-                result = True  # robots.txt unavailable: no restrictions
+            elif status != 429 and 400 <= status < 500:
+                result = True
             else:
-                result = False  # server error: be cautious
+                result = False
         self._cache[origin] = result
         return result
 

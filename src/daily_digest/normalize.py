@@ -1,4 +1,4 @@
-"""Turn feed text into clean, comparable plain text (FR-3.1, FR-3.3)."""
+"""Turn feed text into clean, comparable plain text."""
 
 import hashlib
 import re
@@ -13,10 +13,7 @@ _TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ref_src", "ig
 
 
 def canonicalize_url(url: str) -> str:
-    """Lowercase scheme and host, drop fragment and tracking params, trim trailing slash.
-
-    This does not follow redirects (that needs the network); that comes later.
-    """
+    """Normalize a URL so that the same article compares equal."""
     parts = urlsplit(url.strip())
     query = [
         (k, v)
@@ -30,8 +27,6 @@ def canonicalize_url(url: str) -> str:
 
 
 class _TextExtractor(HTMLParser):
-    """Collect visible text; skip scripts and styles."""
-
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._skip_depth = 0
@@ -62,16 +57,19 @@ def strip_html(html: str) -> str:
 
 
 def make_extract(text: str, limit: int = MAX_EXTRACT_CHARS) -> str:
-    """Truncate to the limit on a word boundary."""
+    """Truncate to at most `limit` characters, ellipsis included, on a word boundary if possible."""
     if len(text) <= limit:
         return text
-    cut = text[:limit].rsplit(" ", 1)[0]
-    return cut.rstrip(" ,;:-") + "…"
+    head = text[: limit - 1]
+    # Text without spaces (e.g. Chinese or Japanese) has no word boundary to cut at.
+    if " " in head:
+        head = head.rsplit(" ", 1)[0]
+    return head.rstrip(" ,;:-") + "…"
 
 
-def content_hash(title: str, extract: str) -> str:
-    """Stable hash of title + extract, used to catch the same story at a different URL."""
-    normalized = re.sub(r"\s+", " ", f"{title}\n{extract}".lower()).strip()
+def content_hash(title: str, body: str) -> str:
+    """Stable hash used to catch the same story published at a different URL."""
+    normalized = re.sub(r"\s+", " ", f"{title}\n{body}".lower()).strip()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 

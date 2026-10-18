@@ -26,9 +26,14 @@ def test_strip_html_unescapes_entities_and_collapses_whitespace():
 
 
 def test_make_extract_truncates_on_word_boundary():
-    text = ("word " * 600).strip()
-    out = make_extract(text)
-    assert len(out) <= MAX_EXTRACT_CHARS + 1  # +1 for the ellipsis
+    out = make_extract(("word " * 600).strip())
+    assert len(out) <= MAX_EXTRACT_CHARS
+    assert out.endswith("word…")
+
+
+def test_make_extract_respects_the_limit_without_word_boundaries():
+    out = make_extract("あ" * 3000)
+    assert len(out) == MAX_EXTRACT_CHARS
     assert out.endswith("…")
 
 
