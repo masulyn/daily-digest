@@ -16,7 +16,7 @@ Python 3.12 CLI that turns RSS items into a cited digest. Read `docs/PRD.md` (wh
 
 ## Implement-and-review loop
 
-Use this when asked to implement a task, or when the user says "follow the loop rules". The reviewer is the `code-reviewer` subagent in `.claude/agents/`. It is development tooling, separate from the product's own Reviewer agent in the design doc.
+Use this when the user asks to "implement X with review loop" (or "with the review loop"). Without that phrase, implement normally and do not run the loop. The main session is the implementer. The reviewer is the `code-reviewer` subagent in `.claude/agents/`. It is development tooling, separate from the product's own Reviewer agent in the design doc.
 
 1. Work on a feature branch, never on `main`.
 2. Implement the task and run `uv run pytest` until it passes. Commit.
