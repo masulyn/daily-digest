@@ -55,7 +55,10 @@ def run_draft(db_path: Path, target: date) -> int:
     """Print stub summaries for the day's unseen items from the local database. Fetches nothing."""
     with Store(db_path) as store:
         state = run_digest(store, target)
+    by_id = {item.id: item for item in state.items}
     for summary in state.summaries:
+        item = by_id[summary.item_id]
+        print(f"{item.title} ({item.source})")
         print("\n".join(f"- {point}" for point in summary.key_points))
         print(f"  {summary.source_url}")
     for note in state.notes:
