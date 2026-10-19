@@ -26,6 +26,32 @@ MAX_ARTICLE_CHARS = 3000
 MAX_CRAWL_DELAY_SECONDS = 30.0
 
 
+# A line that doesn't end like a sentence and is this short is a heading or byline, not prose.
+_MAX_BYLINE_CHARS = 150
+_SENTENCE_END = re.compile(r"[.!?…][\"'”’)\]]*$")
+_EDITORS_NOTE = re.compile(r"editor['’]s note\b", re.I)
+
+
+def _drop_leading_byline(text: str) -> str:
+    """Remove author/title lines and editor's notes that precede the first real paragraph.
+
+    Works on trafilatura's line structure, which the whitespace collapse would erase.
+    Only the leading run is touched, so body text is never altered.
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    start = 0
+    while start < len(lines):
+        line = lines[start]
+        if _EDITORS_NOTE.match(line) or (
+            len(line) <= _MAX_BYLINE_CHARS and not _SENTENCE_END.search(line)
+        ):
+            start += 1
+        else:
+            break
+    # If nothing looks like prose, keep everything rather than return an empty article.
+    return "\n".join(lines[start:] if start < len(lines) else lines)
+
+
 def article_text_from_html(html: bytes | str) -> str | None:
     """The article body as plain text, or None if no real article was found."""
     import trafilatura  # imported here so commands that never extract don't pay for it
@@ -35,7 +61,7 @@ def article_text_from_html(html: bytes | str) -> str | None:
     )
     if not text:
         return None
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", _drop_leading_byline(text)).strip()
     if len(text) < MIN_ARTICLE_CHARS:
         return None
     return make_extract(text, MAX_ARTICLE_CHARS)

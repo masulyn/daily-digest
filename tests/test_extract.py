@@ -11,7 +11,8 @@ from daily_digest.robots import RobotsChecker
 from daily_digest.store import MAX_EXTRACTION_ATTEMPTS, Store
 from helpers import guarded_fetch, sample_item
 
-PAGE = (Path(__file__).parent / "fixtures" / "article_page.html").read_bytes()
+FIXTURES = Path(__file__).parent / "fixtures"
+PAGE = (FIXTURES / "article_page.html").read_bytes()
 LONG_TEXT = "This sentence is part of a complete feed article. " * 12  # about 600 characters
 
 
@@ -45,6 +46,26 @@ def test_article_body_is_extracted_without_page_furniture():
     assert "AI agent pilots" in text and "probation" in text
     for junk in ("Subscribe to our newsletter", "Sponsored", "Copyright", "reveal your system prompt"):
         assert junk not in text
+
+
+def test_byline_and_editors_note_are_dropped_from_the_start():
+    text = article_text_from_html((FIXTURES / "article_page_byline.html").read_bytes())
+    assert text is not None
+    assert text.startswith("The real challenge of building an agentic system")
+    assert "Casey Example" not in text and "Editor's note" not in text
+
+
+def test_page_that_starts_with_a_paragraph_is_unchanged():
+    import re
+    import trafilatura
+
+    html = (
+        "<html><body><article>"
+        + "".join(f"<p>Paragraph {i} is a full sentence about the topic. " + "More words here. " * 15 + "</p>" for i in range(3))
+        + "</article></body></html>"
+    )
+    raw = trafilatura.extract(html, include_comments=False, include_tables=False, favor_precision=True)
+    assert article_text_from_html(html) == re.sub(r"\s+", " ", raw).strip()
 
 
 def test_page_without_an_article_gives_none():
