@@ -16,7 +16,7 @@ uv run daily-digest draft --debug             # also log every model call (count
 
 ## Model access and cost
 
-`draft` without `--stub` calls the Anthropic API once per run. Model, prices, and caps live in `config/settings.toml`. The default hard cap is **$0.10 per run**, checked against a worst-case estimate before each call, so a run that could cross it makes no call. Prices in the file are third-party-reported; check them against the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
+`draft` without `--stub` calls the Anthropic API once per run. Model, prices, and caps live in `config/settings.toml`. The default hard cap is **$0.10 per run**. Before each call the app estimates the worst case (about three characters per token, which errs high for English but can undercount other languages) and makes no call if the estimate would cross the cap; the real cost is computed from the usage the API returns. Prices in the file are third-party-reported; check them against the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
 
 ### 1. Create a key
 

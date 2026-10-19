@@ -156,7 +156,7 @@ def adapter(handler) -> tuple[AnthropicClient, list[httpx2.Request]]:
         return handler(request)
 
     client = AnthropicClient(
-        api_key=SecretStr(FAKE_KEY), model="claude-sonnet-5-5", max_output_tokens=4000,
+        api_key=SecretStr(FAKE_KEY), model="claude-sonnet-5-5",
         timeout_seconds=5, http_client=httpx2.Client(transport=httpx2.MockTransport(record)),
     )
     return client, seen
@@ -223,7 +223,7 @@ def test_refusal_truncation_and_bad_json_keep_their_usage():
 def test_client_has_no_sdk_retries_and_a_pinned_base_url(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://evil.example.com")
     client = AnthropicClient(
-        api_key=SecretStr(FAKE_KEY), model="m", max_output_tokens=10, timeout_seconds=7
+        api_key=SecretStr(FAKE_KEY), model="m", timeout_seconds=7
     )
     assert client._client.max_retries == 0
     assert str(client._client.base_url).rstrip("/") == API_BASE_URL
@@ -238,7 +238,9 @@ def test_key_never_appears_in_settings_reprs_or_errors():
     with pytest.raises(PermanentLLMError) as caught:
         ask(client)
     rendered = "".join(traceback.format_exception(caught.value)) + repr(caught.value)
-    for text in (rendered, repr(SETTINGS), repr(SecretStr(FAKE_KEY)), repr(client._model)):
+    metered_client = MeteredClient(client, SETTINGS)
+    reprs = (repr(SETTINGS), repr(SecretStr(FAKE_KEY)), repr(client), repr(client._client), repr(metered_client))
+    for text in (rendered, *reprs, metered_client.usage_line()):
         assert FAKE_KEY not in text
 
 

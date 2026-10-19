@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, ValidationError
 
-from .base import LLMResult, OutputInvalidError, T, Usage
+from .base import LLMResult, OutputInvalidError, T, Usage, describe_validation_error
 
 
 class MockClient:
@@ -30,4 +30,4 @@ class MockClient:
         try:
             return LLMResult(schema.model_validate_json(text), self._usage)
         except ValidationError as error:
-            raise OutputInvalidError(str(error), self._usage, text) from None
+            raise OutputInvalidError(describe_validation_error(error), self._usage, text) from None

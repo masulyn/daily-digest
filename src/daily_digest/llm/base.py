@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Generic, Protocol, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -47,10 +47,22 @@ class BudgetExceeded(LLMError):
     """Raised before a call that could cross a cap. Nothing was sent."""
 
 
-class LLMClient(Protocol):
-    max_output_tokens: int
+def describe_validation_error(error: ValidationError) -> str:
+    """Where and why a reply failed validation, without echoing any of the reply."""
+    return "; ".join(
+        f"{'.'.join(str(part) for part in e['loc']) or 'reply'}: {e['msg']}"
+        for e in error.errors(include_input=False, include_url=False)
+    )
 
+
+class LLMClient(Protocol):
     def complete(
         self, *, system: str, messages: list[dict], schema: type[T], max_tokens: int
     ) -> LLMResult[T]:
         """One model call whose reply is validated against `schema`."""
+
+
+class BudgetedClient(LLMClient, Protocol):
+    """A client that also says how large a reply the caller may ask for."""
+
+    max_output_tokens: int

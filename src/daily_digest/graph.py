@@ -14,7 +14,7 @@ from pydantic import AwareDatetime, BaseModel
 
 from .contracts import CandidateItem, EditorPick, ItemSummary
 from .editor import select
-from .llm import LLMClient
+from .llm import BudgetedClient
 from .store import Store
 
 
@@ -63,13 +63,13 @@ def summarize_stub(state: DigestState) -> dict:
     return {"summaries": summaries}
 
 
-def editor(state: DigestState, client: LLMClient) -> dict:
+def editor(state: DigestState, client: BudgetedClient) -> dict:
     """Pick and group the day's items with one model call."""
     picks, notes = select(state.items, client)
     return {"selection": picks, "notes": notes}
 
 
-def build_graph(store: Store, client: LLMClient | None = None):
+def build_graph(store: Store, client: BudgetedClient | None = None):
     """load_items -> editor -> end, or load_items -> summarize_stub -> end without a client.
 
     The client carries its own budget (`MeteredClient`), so the graph holds no cost logic.
@@ -87,7 +87,7 @@ def build_graph(store: Store, client: LLMClient | None = None):
     return graph.compile()
 
 
-def run_digest(store: Store, target: date, client: LLMClient | None = None) -> DigestState:
+def run_digest(store: Store, target: date, client: BudgetedClient | None = None) -> DigestState:
     """Run the graph for one day. LangGraph returns a dict, so validate it into the state model.
 
     LangGraph does not validate the last node's output, so this is the only check of it.

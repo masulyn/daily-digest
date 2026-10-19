@@ -48,13 +48,13 @@ class MeteredClient:
         inner: LLMClient,
         settings: LLMSettings,
         *,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], None] | None = None,
     ) -> None:
         self.max_output_tokens = settings.max_output_tokens
         self._inner = inner
         self._settings = settings
         self._prices = settings.prices[settings.model]
-        self._sleep = sleep
+        self._sleep = sleep or (lambda seconds: time.sleep(seconds))
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0

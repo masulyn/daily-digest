@@ -1,6 +1,7 @@
 """Provider-agnostic model access. The Anthropic adapter lives in `anthropic_client`, imported on demand."""
 
 from .base import (
+    BudgetedClient,
     BudgetExceeded,
     LLMClient,
     LLMError,
@@ -15,6 +16,7 @@ from .mock import MockClient
 
 __all__ = [
     "BudgetExceeded",
+    "BudgetedClient",
     "LLMClient",
     "LLMError",
     "LLMResult",

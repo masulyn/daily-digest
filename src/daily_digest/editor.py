@@ -5,10 +5,11 @@ metadata (title, source, URL) is never taken from the model.
 """
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from .contracts import CandidateItem, EditorPick, EditorSelection, Quote
-from .llm import LLMClient, OutputInvalidError
+from .llm import BudgetedClient, OutputInvalidError
 
 MIN_PICKS = 3
 ALL_ITEMS_THEME = "All items"
@@ -29,7 +30,14 @@ without surrounding quotation marks, and `speaker` must be a person or organizat
 - Refer to items only by their id. Never write a URL.
 """
 
-_URL = re.compile(r"(?i)(?:[a-z][a-z0-9+.-]*://|www\.|mailto:)")
+# Schemes, www., and anything shaped like a host (known TLD, or a dotted name followed by a path).
+_URL = re.compile(
+    r"(?i)(?:[a-z][a-z0-9+.-]*://|www\.|(?:mailto|javascript|data|file|ftp):"
+    r"|\b[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|ai|gov|edu|co|dev|app|info|biz|ly)\b"
+    r"|\b[\w-]+(?:\.[\w-]+)+/)"
+)
+MIN_QUOTE_CHARS = 15  # a shorter "quote" is a word or two that would pass the substring check anywhere
+MIN_SPEAKER_CHARS = 3
 _CURLY = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 
 
@@ -46,6 +54,11 @@ class EditorFailed(Exception):
 def _escape(text: str) -> str:
     # The block delimiters use angle brackets, so none can survive inside item text.
     return text.replace("<", "‹").replace(">", "›")
+
+
+def has_url(text: str) -> bool:
+    # NFKC folds full-width lookalikes (：／／) into the ASCII forms the pattern knows.
+    return bool(_URL.search(unicodedata.normalize("NFKC", text)))
 
 
 def normalize(text: str) -> str:
@@ -79,7 +92,7 @@ def check_selection(
         if pick.item_id in seen:
             notes.append(f"dropped repeated pick for item {pick.item_id}")
             continue
-        if _URL.search(pick.theme):
+        if has_url(pick.theme):
             notes.append(f"dropped pick for item {pick.item_id}: theme contains a URL")
             continue
         seen.add(pick.item_id)
@@ -96,11 +109,11 @@ def check_selection(
 
 
 def _quote_problem(quote: Quote, item: SentItem) -> str | None:
-    if _URL.search(quote.text) or _URL.search(quote.speaker):
+    if has_url(quote.text) or has_url(quote.speaker):
         return "contains a URL"
     text, speaker = normalize(quote.text), normalize(quote.speaker)
-    if not text or not speaker:
-        return "empty text or speaker"
+    if len(text) < MIN_QUOTE_CHARS or len(speaker) < MIN_SPEAKER_CHARS:
+        return "text or speaker is too short to verify"
     if text not in normalize(item.body):
         return "text is not in the item"
     if speaker not in normalize(f"{item.title} {item.body}"):
@@ -118,7 +131,7 @@ def _retry_messages(messages: list[dict], error: OutputInvalidError) -> list[dic
 
 
 def select(
-    items: list[CandidateItem], client: LLMClient
+    items: list[CandidateItem], client: BudgetedClient
 ) -> tuple[list[EditorPick], list[str]]:
     """Picks (best first) and notes. Fewer than MIN_PICKS items skip the model."""
     if len(items) < MIN_PICKS:

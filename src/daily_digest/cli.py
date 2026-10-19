@@ -85,7 +85,6 @@ def _make_inner_client(settings: LLMSettings, api_key: SecretStr) -> LLMClient:
     return AnthropicClient(
         api_key=api_key,
         model=settings.model,
-        max_output_tokens=settings.max_output_tokens,
         timeout_seconds=settings.request_timeout_seconds,
     )
 
@@ -107,16 +106,21 @@ def _build_client(settings_path: Path) -> MeteredClient | None:
     return MeteredClient(_make_inner_client(settings, SecretStr(raw_key)), settings)
 
 
+def _printable(text: str) -> str:
+    """Titles come from the web and picks from a model; neither may send control codes to the terminal."""
+    return "".join(c if c.isprintable() else " " for c in text)
+
+
 def run_draft(db_path: Path, target: date, client: MeteredClient | None = None) -> int:
     """Print the day's items from the local database: Editor picks, or stub summaries without a client."""
-    store = _open_existing(db_path)
-    if store is None:
-        return 2
     try:
+        store = _open_existing(db_path)
+        if store is None:
+            return 2
         with store:
             state = run_digest(store, target, client)
     except (LLMError, EditorFailed) as error:
-        print(f"error: {error}", file=sys.stderr)
+        print(f"error: {_printable(str(error))}", file=sys.stderr)
         return 1
     finally:
         if client is not None:
@@ -124,17 +128,17 @@ def run_draft(db_path: Path, target: date, client: MeteredClient | None = None) 
     by_id = {item.id: item for item in state.items}
     for summary in state.summaries:
         item = by_id[summary.item_id]
-        print(f"{item.title} ({item.source})")
-        print("\n".join(f"- {point}" for point in summary.key_points))
+        print(_printable(f"{item.title} ({item.source})"))
+        print("\n".join(f"- {_printable(point)}" for point in summary.key_points))
         print(f"  {summary.source_url}")
     for rank, pick in enumerate(state.selection, start=1):
         item = by_id[pick.item_id]
-        print(f"{rank}. [{pick.theme}] {item.title} ({item.source})")
+        print(_printable(f"{rank}. [{pick.theme}] {item.title} ({item.source})"))
         print(f"   {item.canonical_url}")
         for quote in pick.quotes:
-            print(f'   "{quote.text}" - {quote.speaker}')
+            print(_printable(f'   "{quote.text}" - {quote.speaker}'))
     for note in state.notes:
-        print(note)
+        print(_printable(note))
     return 0
 
 

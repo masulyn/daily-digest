@@ -428,7 +428,7 @@ General: single-column, content-first, generous whitespace, readable body text a
 7. **Human trigger only:** The only human step is running `generate`. There is no approval step before publishing.
 8. **Stack:** Python 3.12+ and LangGraph; SQLite; pydantic; pytest.
 9. **Model-agnostic:** All model calls go through one interface, with Claude Sonnet as the default (NFR-11).
-10. **Cost caps in dollars** (NFR-8): $1.00 per run, $20 per month by default.
+10. **Cost caps in dollars** (NFR-8): $0.10 per run by default; the $20 monthly cap is not yet enforced.
 11. **Scope:** CLI and Markdown first. The web UI (Feature 8) and admin pages (Feature 10) are P2.
 12. **Sources:** RSS only, with five tested starter feeds (FR-1.3). Reddit is out. X, Spotify, and audio sources come later.
 13. **Trend statements:** Describing patterns across sources is allowed; agent commentary and conclusions are not (NFR-10).

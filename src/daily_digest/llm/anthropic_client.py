@@ -10,6 +10,7 @@ from .base import (
     T,
     TransientLLMError,
     Usage,
+    describe_validation_error,
 )
 
 # Pinned in code so an environment variable cannot send the key to another host.
@@ -25,11 +26,9 @@ class AnthropicClient:
         *,
         api_key: SecretStr,
         model: str,
-        max_output_tokens: int,
         timeout_seconds: float,
         http_client=None,
     ) -> None:
-        self.max_output_tokens = max_output_tokens
         self._model = model
         # max_retries=0: the SDK would retry silently and hide attempts from the cost log.
         self._client = anthropic.Anthropic(
@@ -77,4 +76,4 @@ class AnthropicClient:
         try:
             return LLMResult(schema.model_validate_json(text), usage)
         except ValidationError as error:
-            raise OutputInvalidError(str(error), usage, text) from None
+            raise OutputInvalidError(describe_validation_error(error), usage, text) from None

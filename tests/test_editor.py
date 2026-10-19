@@ -1,7 +1,7 @@
-import json
+import logging
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 import httpx2
@@ -9,20 +9,20 @@ import pytest
 from pydantic import SecretStr
 
 from daily_digest import cli
+from daily_digest.config import load_llm_settings
 from daily_digest.contracts import EditorPick, EditorSelection, Quote
 from daily_digest.editor import (
     ALL_ITEMS_THEME,
-    SYSTEM_PROMPT,
     EditorFailed,
     check_selection,
+    has_url,
     normalize,
     render_items,
     select,
 )
 from daily_digest.graph import run_digest
-from daily_digest.llm import MeteredClient, MockClient, Usage
+from daily_digest.llm import MockClient
 from daily_digest.llm.anthropic_client import AnthropicClient
-from daily_digest.config import load_llm_settings
 from daily_digest.store import Store
 from helpers import editor_items
 
@@ -128,6 +128,38 @@ def test_urls_in_model_fields_are_dropped():
     assert len(notes) == 3
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["see https://evil.example", "www.evil.example", "evil.example/path", "visit evil.com", "javascript:alert(1)",
+     "data:text/html,x", "mailto:a@b.co", "https：／／evil.example", "ftp://x"],
+)
+def test_url_shaped_text_is_caught_even_in_disguise(text):
+    assert has_url(text)
+
+
+@pytest.mark.parametrize("text", ["Governance lags adoption", "AI at scale", "Q3 results: up 4.5%", "Dr. Reyes said so"])
+def test_ordinary_themes_are_not_mistaken_for_urls(text):
+    assert not has_url(text)
+
+
+def test_javascript_theme_drops_the_pick():
+    picks, notes = checked([pick("a1", "javascript:alert(1)"), pick("a2")])
+    assert [p.item_id for p in picks] == ["a2"] and "URL" in notes[0]
+
+
+def test_trivially_short_quotes_and_speakers_are_not_verified():
+    short = Quote(text="the", speaker="Dana Reyes")
+    tiny_speaker = Quote(text="We moved 40 pilots into production this year.", speaker="AI")
+    picks, notes = checked([pick("a1", "T", short, tiny_speaker)])
+    assert picks[0].quotes == [] and len(notes) == 2 and all("too short" in n for n in notes)
+
+
+def test_a_quote_found_only_in_the_title_is_not_verified():
+    in_title = Quote(text="Bank moves 40 AI pilots into production", speaker="Dana Reyes")
+    picks, notes = checked([pick("a1", "T", in_title)])
+    assert picks[0].quotes == [] and "not in the item" in notes[0]
+
+
 # --- the node --------------------------------------------------------------------------
 
 def test_editor_returns_a_valid_selection_with_item_metadata_left_to_code():
@@ -209,7 +241,7 @@ def fake_api(monkeypatch, handler):
     """Route the real adapter through a mock HTTP transport; the key still comes from the environment."""
     def make(settings, api_key: SecretStr):
         return AnthropicClient(
-            api_key=api_key, model=settings.model, max_output_tokens=settings.max_output_tokens,
+            api_key=api_key, model=settings.model,
             timeout_seconds=5, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
         )
     monkeypatch.setattr(cli, "_make_inner_client", make)
@@ -267,8 +299,6 @@ def test_a_failed_call_still_prints_usage(db, monkeypatch, capsys):
 
 
 def test_debug_run_logs_each_call_and_leaks_nothing(db, monkeypatch, capfd):
-    import logging
-
     monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
     monkeypatch.delenv("ANTHROPIC_LOG", raising=False)
     answers = iter([httpx2.Response(429, json={"error": {"message": f"slow down {FAKE_KEY}"}}), None])
@@ -278,9 +308,11 @@ def test_debug_run_logs_each_call_and_leaks_nothing(db, monkeypatch, capfd):
         return reply or good_reply(request)
 
     fake_api(monkeypatch, handler)
-    monkeypatch.setattr("time.sleep", lambda s: None)
+    slept = []
+    monkeypatch.setattr("time.sleep", slept.append)
     assert run_main(monkeypatch, "--db", str(db), "--date", DAY.isoformat(), "--debug") == 0
     captured = capfd.readouterr()
+    assert slept == [1.0]  # the retry backed off without really sleeping
     assert captured.err.count("llm call") == 2
     assert "outcome=transient_error" in captured.err and "outcome=ok" in captured.err
     assert FAKE_KEY not in captured.out and FAKE_KEY not in captured.err
@@ -288,3 +320,27 @@ def test_debug_run_logs_each_call_and_leaks_nothing(db, monkeypatch, capfd):
     assert "ANTHROPIC_LOG" not in os.environ
     assert logging.getLogger("anthropic").getEffectiveLevel() != logging.DEBUG
     assert logging.getLogger("daily_digest").handlers == []
+
+
+def test_usage_line_prints_even_when_the_database_is_missing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
+    fake_api(monkeypatch, good_reply)
+    assert run_main(monkeypatch, "--db", str(tmp_path / "missing.db")) == 2
+    assert "usage: 0 call(s)" in capsys.readouterr().out
+
+
+def test_control_characters_never_reach_the_terminal(db, monkeypatch, capsys):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
+    escape = "\x1b[31m"
+    text = selection(pick("a1", f"Red{escape}theme"), pick("a2"), pick("a3")).model_dump_json()
+    fake_api(monkeypatch, lambda r: httpx2.Response(200, json=message_body(text)))
+    assert run_main(monkeypatch, "--db", str(db), "--date", DAY.isoformat()) == 0
+    assert "\x1b" not in capsys.readouterr().out
+
+
+def test_validation_failure_messages_do_not_echo_the_reply():
+    secret_reply = '{"picks": [{"item_id": "a1", "theme": "SENSITIVE-REPLY-TEXT", "quotes": 5}]}'
+    client = MockClient([secret_reply, secret_reply])
+    with pytest.raises(EditorFailed) as caught:
+        select(four(), client)
+    assert "SENSITIVE-REPLY-TEXT" not in str(caught.value)
