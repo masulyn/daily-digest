@@ -28,13 +28,13 @@ Use this when the user asks to "implement X with review loop" (or "with the revi
 5. Run `uv run pytest`, commit the fixes, and call `code-reviewer` again with only the diff since the last reviewed commit plus the decisions on prior findings. The reviewer accepts or objects to each decision. Settle objections in the next round.
 6. Stop after at most **3 review rounds**.
    - If the reviewer returns `VERDICT: CLEAN` or `VERDICT: ADVISORY ONLY` with every advisory fixed or accepted as deferred, go to step 7.
-   - If blocking findings or objections remain after round 3, stop. Do not push. Summarize each open item and the disagreement, and ask the user to decide.
-7. Before asking to push, give the user a summary in the session with these sections:
+   - If blocking findings or objections remain after round 3, stop. Do not push or open a PR. Summarize each open item and the disagreement, and ask the user to decide.
+7. When the loop is clean and ready for human review, give the user a summary in the session with these sections:
    - **What the PR does**: the change in a few sentences, in terms of behaviour.
    - **How it is implemented**: a high-level description of the approach and the non-obvious choices, without walking through the code.
    - **File and folder changes**: files and folders added, removed, moved, or renamed, with one line each. Say "none" if the structure is unchanged.
    - **Deferred items**: every deferred finding with its reason and enough detail to paste into the next coding session. Say "none" if there are none.
-8. Ask the user before pushing. After they approve, push the branch and open a PR with `gh pr create`. Use the step 7 summary as the PR body, without any Merge order section, plus a short round-by-round list of findings and how each was settled.
+8. Right after the summary, push the branch and open a PR with `gh pr create` without asking first. Then give the user the PR link. Use the step 7 summary as the PR body, without any Merge order section, plus a short round-by-round list of findings and how each was settled.
 9. Never merge, never force-push, never approve the PR. The user does the final review and the merge.
 
 ## Parallel loops
