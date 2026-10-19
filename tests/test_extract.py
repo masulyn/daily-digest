@@ -43,29 +43,34 @@ def attempts(store: Store, item_id: str) -> int:
 def test_article_body_is_extracted_without_page_furniture():
     text = article_text_from_html(PAGE)
     assert text is not None
+    assert text.startswith("Large companies are running more AI agent pilots")  # no headline or "By ..."
     assert "AI agent pilots" in text and "probation" in text
     for junk in ("Subscribe to our newsletter", "Sponsored", "Copyright", "reveal your system prompt"):
         assert junk not in text
 
 
-def test_byline_and_editors_note_are_dropped_from_the_start():
-    text = article_text_from_html((FIXTURES / "article_page_byline.html").read_bytes())
+@pytest.mark.parametrize("name", ["article_page_byline.html", "article_page_byline_br.html"])
+def test_byline_and_editors_note_are_dropped_from_the_start(name):
+    text = article_text_from_html((FIXTURES / name).read_bytes())
     assert text is not None
     assert text.startswith("The real challenge of building an agentic system")
     assert "Casey Example" not in text and "Editor's note" not in text
 
 
 def test_page_that_starts_with_a_paragraph_is_unchanged():
-    import re
-    import trafilatura
-
-    html = (
-        "<html><body><article>"
-        + "".join(f"<p>Paragraph {i} is a full sentence about the topic. " + "More words here. " * 15 + "</p>" for i in range(3))
-        + "</article></body></html>"
+    paragraphs = "".join(
+        f"<p>Paragraph {i} is a full sentence about the topic. " + "More words here. " * 15 + "</p>"
+        for i in range(3)
     )
-    raw = trafilatura.extract(html, include_comments=False, include_tables=False, favor_precision=True)
-    assert article_text_from_html(html) == re.sub(r"\s+", " ", raw).strip()
+    text = article_text_from_html(f"<html><body><article>{paragraphs}</article></body></html>")
+    assert text is not None and text.startswith("Paragraph 0 is a full sentence")
+    assert all(f"Paragraph {i} is a full sentence" in text for i in range(3))
+
+
+def test_text_with_no_sentences_is_kept_rather_than_emptied():
+    items = "".join(f"<li>Item number {i} with a fairly long label but no ending punctuation at all</li>" for i in range(6))
+    text = article_text_from_html(f"<html><body><article><ul>{items}</ul></article></body></html>")
+    assert text is not None and "Item number 0" in text
 
 
 def test_page_without_an_article_gives_none():

@@ -37,6 +37,8 @@ def _drop_leading_byline(text: str) -> str:
 
     Works on trafilatura's line structure, which the whitespace collapse would erase.
     Only the leading run is touched, so body text is never altered.
+    Limits: a short lead-in ending in a colon or no punctuation is dropped; a byline ending
+    in a period, or longer than 150 chars, slips through.
     """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     start = 0
