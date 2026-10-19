@@ -112,9 +112,10 @@ def test_invalid_node_output_fails_loudly(monkeypatch):
 def test_draft_command_prints_summaries_and_quiet_day(tmp_path, capsys):
     path = tmp_path / "digest.db"
     with Store(path) as store:
-        store.add_if_new(item_on("a", noon(), "Headline fact. More."))
+        store.add_if_new(item_on("a", noon(), "Headline fact. More.", source="CIO.com AI"))
     assert run_draft(path, DAY) == 0
     out = capsys.readouterr().out
+    assert "Story a (CIO.com AI)" in out
     assert "- Headline fact." in out and "https://news.example.com/a" in out
     assert run_draft(path, DAY - timedelta(days=5)) == 0
     assert "quiet day" in capsys.readouterr().out
