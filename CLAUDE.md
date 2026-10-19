@@ -34,7 +34,7 @@ Use this when the user asks to "implement X with review loop" (or "with the revi
    - **How it is implemented**: a high-level description of the approach and the non-obvious choices, without walking through the code.
    - **File and folder changes**: files and folders added, removed, moved, or renamed, with one line each. Say "none" if the structure is unchanged.
    - **Deferred items**: every deferred finding with its reason and enough detail to paste into the next coding session. Say "none" if there are none.
-8. Ask the user before pushing. After they approve, push the branch and open a PR with `gh pr create`. Use the step 7 summary as the PR body, plus a short round-by-round list of findings and how each was settled.
+8. Ask the user before pushing. After they approve, push the branch and open a PR with `gh pr create`. Use the step 7 summary as the PR body, without any Merge order section, plus a short round-by-round list of findings and how each was settled.
 9. Never merge, never force-push, never approve the PR. The user does the final review and the merge.
 
 ## Parallel loops
@@ -51,4 +51,4 @@ Use these rules when the user asks to implement several things in parallel with 
 4. **Rebase before the summary.** When the loop is clean and before step 7, run `git fetch origin`, `git rebase origin/main`, then `uv run pytest`. The branch is not pushed yet, so no force-push is needed.
    - Trivial conflicts: resolve them, rerun the tests, and call `code-reviewer` once on the rebased diff.
    - Nontrivial conflicts, or conflicts in logic rather than text: run `git rebase --abort`, stop, and ask the user.
-5. **Recommend a merge order.** Add a **Merge order** section to the step 7 summary and the PR body. Rank this PR against the other parallel tasks you know of, foundational and lower-risk changes first, and give a one-line reason per position: files shared with another task, one change depending on another, or risk. Note which PRs will need their branch updated after each merge. If you only know your own task, say which files and modules you touch so the user can order the PRs across sessions.
+5. **Recommend a merge order.** Add a **Merge order** section to the step 7 summary in the session only. Leave it out of the PR body. Rank this PR against the other parallel tasks you know of, foundational and lower-risk changes first, and give a one-line reason per position: files shared with another task, one change depending on another, or risk. Note which PRs will need their branch updated after each merge. If you only know your own task, say which files and modules you touch so the user can order the PRs across sessions.
