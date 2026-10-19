@@ -75,6 +75,7 @@ class DatabaseNotFound(Exception):
 
 class Store:
     def __init__(self, path: Path | str, *, must_exist: bool = False) -> None:
+        # must_exist needs a real file, so ":memory:" is not allowed with it.
         # sqlite3.connect would silently create a mistyped path as an empty database.
         if must_exist and not Path(path).is_file():
             raise DatabaseNotFound(f"database not found: {path}; run 'daily-digest ingest' first")

@@ -20,6 +20,15 @@ def test_read_commands_fail_on_missing_db_and_create_nothing(command, tmp_path, 
 
 
 @pytest.mark.parametrize("command", ["draft", "extract"])
+def test_read_commands_fail_on_missing_default_db(command, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("DIGEST_DATA_DIR", str(tmp_path / "data"))
+    assert _run(monkeypatch, command) != 0
+    expected = tmp_path / "data" / "digest.db"
+    assert f"database not found: {expected}; run 'daily-digest ingest' first" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("command", ["draft", "extract"])
 def test_read_commands_still_work_on_existing_db(command, tmp_path, monkeypatch):
     path = tmp_path / "digest.db"
     Store(path).close()
