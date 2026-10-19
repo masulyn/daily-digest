@@ -5,6 +5,8 @@ from daily_digest.store import Store
 
 
 def _run(monkeypatch, *argv):
+    if argv[0] == "draft":
+        argv = (*argv, "--stub")  # these tests are about the database, not the model key
     monkeypatch.setattr("sys.argv", ["daily-digest", *argv])
     with pytest.raises(SystemExit) as exit_info:
         cli.main()

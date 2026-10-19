@@ -2,14 +2,17 @@
 
 import os
 import tomllib
+from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .contracts import Source
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FEEDS_PATH = PROJECT_ROOT / "config" / "feeds.toml"
+DEFAULT_SETTINGS_PATH = PROJECT_ROOT / "config" / "settings.toml"
 
 
 class _FeedsFile(BaseModel):
@@ -27,3 +30,56 @@ def load_sources(path: Path = DEFAULT_FEEDS_PATH) -> list[Source]:
 def data_dir() -> Path:
     """Where the database lives. Override with DIGEST_DATA_DIR."""
     return Path(os.environ.get("DIGEST_DATA_DIR", PROJECT_ROOT / "data"))
+
+
+class ModelPrices(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_per_mtok: Decimal = Field(gt=0)
+    output_per_mtok: Decimal = Field(gt=0)
+
+
+class LLMSettings(BaseModel):
+    """Model and budget settings. Every key is required so a gap fails at startup."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["anthropic", "mock"]
+    model: str = Field(min_length=1)
+    prices: dict[str, ModelPrices]
+    max_usd_per_run: Decimal = Field(gt=0)
+    max_input_tokens: int = Field(gt=0)
+    max_output_tokens: int = Field(gt=0)
+    request_timeout_seconds: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _model_has_a_price(self) -> "LLMSettings":
+        if self.model not in self.prices:
+            raise ValueError(f"no entry for model {self.model!r} in llm.prices")
+        return self
+
+
+class SettingsError(Exception):
+    """The settings file is missing or has a bad value; the message names the key."""
+
+
+class _SettingsFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    llm: LLMSettings
+
+
+def load_llm_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LLMSettings:
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except FileNotFoundError:
+        raise SettingsError(f"settings file not found: {path}") from None
+    except tomllib.TOMLDecodeError as error:
+        raise SettingsError(f"settings file {path} is not valid TOML: {error}") from None
+    try:
+        return _SettingsFile.model_validate(data).llm
+    except ValidationError as error:
+        first = error.errors()[0]
+        key = ".".join(str(part) for part in first["loc"]) or "llm"
+        raise SettingsError(f"invalid setting {key}: {first['msg']}") from None

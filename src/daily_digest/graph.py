@@ -1,7 +1,7 @@
 """The digest pipeline as a LangGraph graph.
 
-Nodes are plain functions from state to a partial state update. Only `load_items` touches
-anything outside the state (the local store); nothing here uses the network or a model.
+Nodes are plain functions from state to a partial state update. Only `load_items` reads
+outside the state (the local store); the editor reaches a model only through the client it is given.
 """
 
 import operator
@@ -12,7 +12,9 @@ from typing import Annotated
 from langgraph.graph import END, START, StateGraph
 from pydantic import AwareDatetime, BaseModel
 
-from .contracts import CandidateItem, ItemSummary
+from .contracts import CandidateItem, EditorPick, ItemSummary
+from .editor import select
+from .llm import LLMClient
 from .store import Store
 
 
@@ -22,6 +24,7 @@ class DigestState(BaseModel):
     window_end: AwareDatetime | None = None
     items: list[CandidateItem] = []
     summaries: list[ItemSummary] = []
+    selection: list[EditorPick] = []
     notes: Annotated[list[str], operator.add] = []  # non-fatal; nodes return only new notes
 
 
@@ -60,21 +63,34 @@ def summarize_stub(state: DigestState) -> dict:
     return {"summaries": summaries}
 
 
-def build_graph(store: Store):
-    """load_items -> summarize_stub -> end."""
+def editor(state: DigestState, client: LLMClient) -> dict:
+    """Pick and group the day's items with one model call."""
+    picks, notes = select(state.items, client)
+    return {"selection": picks, "notes": notes}
+
+
+def build_graph(store: Store, client: LLMClient | None = None):
+    """load_items -> editor -> end, or load_items -> summarize_stub -> end without a client.
+
+    The client carries its own budget (`MeteredClient`), so the graph holds no cost logic.
+    """
     graph = StateGraph(DigestState)
     graph.add_node("load_items", lambda state: load_items(state, store))
-    graph.add_node("summarize_stub", summarize_stub)
+    if client is None:
+        second, node = "summarize_stub", summarize_stub
+    else:
+        second, node = "editor", lambda state: editor(state, client)
+    graph.add_node(second, node)
     graph.add_edge(START, "load_items")
-    graph.add_edge("load_items", "summarize_stub")
-    graph.add_edge("summarize_stub", END)
+    graph.add_edge("load_items", second)
+    graph.add_edge(second, END)
     return graph.compile()
 
 
-def run_digest(store: Store, target: date) -> DigestState:
+def run_digest(store: Store, target: date, client: LLMClient | None = None) -> DigestState:
     """Run the graph for one day. LangGraph returns a dict, so validate it into the state model.
 
     LangGraph does not validate the last node's output, so this is the only check of it.
     """
-    result = build_graph(store).invoke(DigestState(target_date=target))
+    result = build_graph(store, client).invoke(DigestState(target_date=target))
     return DigestState.model_validate(result)

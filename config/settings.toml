@@ -1,0 +1,14 @@
+# Model settings. Prices are USD per million tokens (third-party-reported; checked against
+# the provider's pricing page on Oct 19, 2026).
+
+[llm]
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+max_usd_per_run = 0.10
+max_input_tokens = 40000
+max_output_tokens = 4000
+request_timeout_seconds = 60
+
+[llm.prices.claude-sonnet-5-5]
+input_per_mtok = 2.0
+output_per_mtok = 10.0
