@@ -71,6 +71,21 @@ def test_summarize_stub_falls_back_to_extract_then_title():
     assert points == [["Only the extract."], ["Story b"]]
 
 
+def test_graph_prefers_article_text_saved_through_the_store():
+    store = Store(":memory:")
+    store.add_if_new(item_on("a", noon(), "Feed teaser."))
+    store.save_article_text("a", "Saved point. Another.")
+    [summary] = run_digest(store, DAY).summaries
+    assert summary.key_points == ["Saved point."]
+
+
+def test_graph_falls_back_to_extract_when_no_article_text_is_saved():
+    store = Store(":memory:")
+    store.add_if_new(item_on("a", noon(), "Feed teaser. More."))
+    [summary] = run_digest(store, DAY).summaries
+    assert summary.key_points == ["Feed teaser."]
+
+
 def test_graph_summarizes_each_item_with_its_url():
     store = Store(":memory:")
     for slug in "abc":
