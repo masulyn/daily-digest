@@ -12,7 +12,7 @@ from .fetch import HttpFetcher, user_agent
 from .graph import run_digest
 from .ingest import ingest
 from .robots import RobotsChecker
-from .store import Store
+from .store import DatabaseNotFound, Store
 
 
 def _warn_if_no_contact() -> None:
@@ -39,7 +39,12 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
 
 def run_extract(db_path: Path, limit: int | None) -> int:
     _warn_if_no_contact()
-    with HttpFetcher() as fetcher, Store(db_path) as store:
+    try:
+        store = Store(db_path, must_exist=True)
+    except DatabaseNotFound as error:
+        print(error, file=sys.stderr)
+        return 2
+    with HttpFetcher() as fetcher, store:
         robots = RobotsChecker(fetcher.fetch, user_agent())
         report = extract_articles(
             store, fetcher.fetch, robots, set_host_delay=fetcher.set_host_delay, limit=limit
@@ -53,7 +58,12 @@ def run_extract(db_path: Path, limit: int | None) -> int:
 
 def run_draft(db_path: Path, target: date) -> int:
     """Print stub summaries for the day's unseen items from the local database. Fetches nothing."""
-    with Store(db_path) as store:
+    try:
+        store = Store(db_path, must_exist=True)
+    except DatabaseNotFound as error:
+        print(error, file=sys.stderr)
+        return 2
+    with store:
         state = run_digest(store, target)
     for summary in state.summaries:
         print("\n".join(f"- {point}" for point in summary.key_points))
