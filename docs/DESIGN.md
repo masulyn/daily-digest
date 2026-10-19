@@ -106,9 +106,11 @@ Requirements this section implements: FR-2.x.
 
 **Test modes.** A mock provider returns canned outputs; a recorded mode replays saved responses.
 
-**Price table and dollar budgets (NFR-8).** Config holds USD per million input and output tokens per model. The Coordinator converts token usage to dollars and enforces: hard cap $1.00 per run, degraded mode at 80% ($0.80), monthly cap $20, plus sanity ceilings of 400k input and 30k output tokens per run.
+**Price table and dollar budgets (NFR-8).** Config holds USD per million input and output tokens per model. `MeteredClient` wraps any client: before each attempt it estimates the worst case and refuses to call if it would cross the hard cap (default $0.10 per run) or the ceilings (40k input, 4k output tokens per call); after each attempt it converts the returned usage to dollars and logs the call at DEBUG. It also owns the retry policy (two retries on 429, 5xx, timeout, and connection errors), so the SDK's own retries are off. The monthly cap ($20) and degraded mode at 80% are not yet enforced.
 
-**Cost estimate (rough, not measured).**
+**Editor input.** The Editor reads each item's full stored text (`article_text` up to 3,000 characters, else the extract up to 1,200) in one prompt, with no per-item summarizer. Stored text is already short, so summarizing first would lose detail the Editor and Reviewer need and cost about three times as much. A 20-item day measured about 8k input tokens on the local database (Oct 19, 2026); the pre-call estimate is deliberately higher (about 10k).
+
+**Cost estimate (rough, not measured).** The original full-pipeline estimate below predates the Editor-only build and still applies to the later stages.
 
 | Case | Tokens | Cost at $2 / $10 per million | At $3 / $15 |
 |---|---|---|---|
