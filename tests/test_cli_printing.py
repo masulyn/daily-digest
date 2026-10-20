@@ -63,8 +63,8 @@ def test_stub_draft_does_not_print_escape_sequences_from_the_url(tmp_path, capsy
     )
     store_with(db, item)
     assert run_main(monkeypatch, db, "--stub") == 0
-    out = capsys.readouterr().out
-    assert "\x1b" not in out and "https://news.example.com/a [31mx" in out
+    captured = capsys.readouterr()
+    assert "\x1b" not in captured.out + captured.err and "https://news.example.com/a [31mx" in captured.out
 
 
 def test_stub_draft_does_not_print_escape_sequences_from_source_or_title(tmp_path, capsys, monkeypatch):
@@ -74,8 +74,8 @@ def test_stub_draft_does_not_print_escape_sequences_from_source_or_title(tmp_pat
     )
     store_with(db, item)
     assert run_main(monkeypatch, db, "--stub") == 0
-    out = capsys.readouterr().out
-    assert "\x1b" not in out and "Ti [31mtle (Src [31m)" in out
+    captured = capsys.readouterr()
+    assert "\x1b" not in captured.out + captured.err and "Ti [31mtle (Src [31m)" in captured.out
 
 
 def test_real_draft_does_not_print_escape_sequences_from_the_url(tmp_path, capsys, monkeypatch):
@@ -85,17 +85,27 @@ def test_real_draft_does_not_print_escape_sequences_from_the_url(tmp_path, capsy
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake-key")
     fake_api(monkeypatch)
     assert run_main(monkeypatch, db) == 0
-    out = capsys.readouterr().out
-    assert "\x1b" not in out and "[31m" in out  # the URL is shown, just defanged
+    captured = capsys.readouterr()
+    assert "\x1b" not in captured.out + captured.err and "[31m" in captured.out  # the URL is shown, just defanged
 
 
 def test_debug_log_lines_are_cleaned(capsys):
     with cli._debug_logging(True):
         logging.getLogger("daily_digest").debug("saw %s", f"bad{ESC}url")
-    err = capsys.readouterr().err
-    assert "\x1b" not in err and "bad [31murl" in err
+    captured = capsys.readouterr()
+    assert "\x1b" not in captured.out + captured.err and "bad [31murl" in captured.err
 
 
 def test_error_lines_are_cleaned(tmp_path, capsys):
     assert cli.run_draft(tmp_path / f"missing{ESC}.db", DAY) == 2
-    assert "\x1b" not in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert "\x1b" not in captured.out + captured.err and "missing [31m.db" in captured.err
+
+
+def test_settings_error_is_cleaned(tmp_path, capsys, monkeypatch):
+    db = tmp_path / "digest.db"
+    store_with(db, sample_item("a"))
+    monkeypatch.setattr(cli, "DEFAULT_SETTINGS_PATH", tmp_path / f"settings{ESC}.toml")
+    assert run_main(monkeypatch, db) == 2
+    captured = capsys.readouterr()
+    assert "\x1b" not in captured.out + captured.err and "settings [31m.toml" in captured.err

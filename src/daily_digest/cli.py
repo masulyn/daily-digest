@@ -56,7 +56,7 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
         reports = ingest(sources, fetcher.fetch, robots, store)
         print(f"{'source':34} {'entries':>7} {'stored':>6} {'dupes':>5} {'skipped':>7}  error")
         for r in reports:
-            print(_printable(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7}  {r.error or ''}"))
+            print(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7}  {r.error or ''}")
         print(f"\nItems in database: {store.count()}  ({db_path})")
     # Partial failures are reported in the table; only fail when nothing was ingested.
     return 0 if any(r.error is None for r in reports) else 1
@@ -74,7 +74,7 @@ def run_extract(db_path: Path, limit: int | None) -> int:
         )
     print(f"Considered {report.considered}, extracted {report.extracted}, deferred {report.deferred}.")
     for code, n in sorted(report.failures.items()):
-        print(_printable(f"  {code}: {n}"))
+        print(f"  {code}: {n}")
     # Like ingest: fail only when articles were attempted and none came back.
     return 1 if report.considered and not report.extracted else 0
 
@@ -108,7 +108,7 @@ def _build_client(settings_path: Path) -> MeteredClient | None:
 
 
 def _printable(text: str) -> str:
-    """Titles come from the web and picks from a model; neither may send control codes to the terminal."""
+    """Feed, model and config text must not send control codes to the terminal."""
     return "".join(c if c.isprintable() or c == "\n" else " " for c in text)
 
 
