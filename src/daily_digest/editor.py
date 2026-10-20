@@ -65,19 +65,20 @@ count them.
 
 No opinion, prediction, advice, evaluation, or "so what" of your own. An implication for \
 adoption leaders may appear only if a source stated it, with attribution. Keep the source's \
-hedges ("reportedly", "expects") and do not add hedges the source does not use. Never state a claim more strongly than its source does. Use no \
-promotional framing of a vendor. Where sources disagree, report each view with attribution and \
-leave the disagreement unresolved.
+hedges ("reportedly", "expects") and do not add hedges the source does not use. Never state a \
+claim more strongly than its source does. Use no promotional framing of a vendor. Where sources \
+disagree, report each view with attribution and leave the disagreement unresolved.
 
 Sentences: write each section as a list of sentences and give each one a type:
 - factual: a specific fact or statistic. List the items that support it.
 - quote: a direct quote. Put the exact quoted string in `quote` (copied character for character \
 from the item, without surrounding quotation marks), put the speaker's name in `speaker`, and \
 include both in the sentence text. A quote sentence names its speaker itself: do not introduce it \
-with a separate sentence. List the item.
+with a separate sentence that attributes it. List the item.
 - attributed_opinion: a view held by a named person or organization. Put the name in `speaker` \
-and in the sentence text. List the items. Use attributed_opinion only when the sentence text names who \
-holds the view. If a view has no named holder, state it as fact only if the item does; otherwise omit it.
+and in the sentence text. List the items. Use attributed_opinion only when the sentence text names \
+who holds the view. If a view has no named holder, state it as fact only if the item does; \
+otherwise omit it.
 - trend: a pattern that at least two independent items support together. List at least two items.
 - transition: connective text that makes no claim. List no items.
 Set starts_paragraph to true on the first sentence of each paragraph.

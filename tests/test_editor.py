@@ -764,6 +764,15 @@ def test_a_publishers_name_is_not_mistaken_for_an_invented_link():
     assert "host name" in check_draft(elsewhere, sent).notes[0]  # only the cited item's own publisher counts
 
 
+def test_a_headline_may_name_the_publisher_but_not_an_invented_host():
+    sent = {"p": SentItem(title="Capex warning", body="Gartner expects spending to outpace revenue.", source="CIO.com AI")}
+    body = [filler(250, ("p",))]
+    ok = Draft(headline="CIO.com reports Gartner capex warning", what_you_need_to_know=body, worth_a_closer_look=[filler(5, ("p",))])
+    assert not any("headline" in p for p in check_draft(ok, sent).problems)
+    bad = ok.model_copy(update={"headline": "Evil.com reports Gartner capex warning"})
+    assert any("headline mentions" in p for p in check_draft(bad, sent).problems)
+
+
 def test_the_rendered_items_carry_their_source_for_the_host_check():
     _, sent = render_items(editor_items(DAY, "a1"))
     assert sent["a1"].source == "Example Wire"
@@ -779,5 +788,5 @@ def test_the_source_name_does_not_make_a_publisher_a_valid_speaker():
 
 def test_the_prompts_ban_quote_lead_in_sentences_and_added_hedges():
     for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
-        assert "do not introduce it with a separate sentence" in prompt
+        assert "do not introduce it with a separate sentence that attributes it" in prompt
         assert "do not add hedges the source does not use" in prompt
