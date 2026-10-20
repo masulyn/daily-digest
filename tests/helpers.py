@@ -1,6 +1,8 @@
 """Small builders and fakes shared by tests."""
 
-from datetime import datetime, timezone
+import json
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 from daily_digest.contracts import CandidateItem, ErrorCode
 from daily_digest.fetch import FetchError
@@ -33,3 +35,17 @@ def guarded_fetch(responder):
 
     fetch.calls = calls
     return fetch
+
+
+def editor_items(day: date, *ids: str) -> list[CandidateItem]:
+    """Items from the saved Editor fixture, published at local noon on `day`."""
+    rows = json.loads((Path(__file__).parent / "fixtures" / "editor_items.json").read_text())
+    noon = datetime.combine(day, datetime.min.time().replace(hour=12)).astimezone()
+    return [
+        CandidateItem(
+            canonical_url=f"https://news.example.com/{row['id']}", published=noon,
+            content_hash=f"hash-{row['id']}", **row,
+        )
+        for row in rows
+        if not ids or row["id"] in ids
+    ]

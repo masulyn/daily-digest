@@ -43,3 +43,20 @@ class ItemSummary(BaseModel):
     item_id: str
     key_points: list[str]
     source_url: str
+
+
+class Quote(BaseModel):
+    text: str = Field(min_length=1)
+    speaker: str = Field(min_length=1)
+
+
+class EditorPick(BaseModel):
+    item_id: str
+    theme: str = Field(min_length=1, max_length=80)
+    quotes: list[Quote] = Field(default_factory=list, max_length=2)
+
+
+class EditorSelection(BaseModel):
+    """What the Editor model returns: 3 to 8 picks, best first."""
+
+    picks: list[EditorPick] = Field(min_length=3, max_length=8)
