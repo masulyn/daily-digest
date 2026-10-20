@@ -191,6 +191,10 @@ def _quoted_passages(text: str) -> list[str]:
     return [span for span in spans if len(span) >= MIN_QUOTE_CHARS]
 
 
+def _clip(text: str) -> str:
+    return text if len(text) <= MAX_NOTE_TEXT else text[:MAX_NOTE_TEXT] + "..."
+
+
 def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tuple[str, str] | None:
     """(reason, detail): the reason is fixed wording and safe to log; the detail may hold model text."""
     text = sentence.text
@@ -198,7 +202,7 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tup
         return "contains a URL or a citation marker", ""
     unknown = [i for i in sentence.item_ids if i not in sent]
     if unknown:
-        return "cites an item that was not provided", f" (item {unknown[0]!r})"
+        return "cites an item that was not provided", f" (item {_clip(unknown[0])!r})"
     if sentence.type == "trend" and len(sentence.item_ids) < 2:
         return "a trend must cite at least two items", ""
     if sentence.type not in ("trend", "transition") and not sentence.item_ids:
@@ -276,7 +280,7 @@ def check_draft(
             if not reason and section_ids and not set(cleaned.item_ids) <= section_ids[position]:
                 reason = "cites an item this section did not cite before"
             if reason:
-                shown = cleaned.text if len(cleaned.text) <= MAX_NOTE_TEXT else cleaned.text[:MAX_NOTE_TEXT] + "..."
+                shown = _clip(cleaned.text)
                 notes.append(f'dropped {name} sentence {number} ({cleaned.type}): "{shown}" - {reason}{detail}')
                 dropped.append(f"{name} sentence {number}: {reason}")
             else:

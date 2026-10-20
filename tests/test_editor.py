@@ -649,3 +649,9 @@ def test_a_hostile_item_id_never_reaches_the_log(caplog):
     assert "cites an item that was not provided" in caplog.text
     for fragment in ("it's", 'x"', '"x'):
         assert fragment not in caplog.text
+
+
+def test_a_very_long_item_id_is_clipped_in_the_note():
+    long_id = "z" * 5000
+    notes = notes_for("factual", ids=(long_id,))
+    assert len(notes) == 1 and len(notes[0]) < 600 and "z" * 201 not in notes[0]
