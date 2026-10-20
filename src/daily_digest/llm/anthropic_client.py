@@ -1,6 +1,7 @@
 """Anthropic Messages API adapter. The only module that imports the Anthropic SDK."""
 
 import anthropic
+import httpx2
 from pydantic import SecretStr, ValidationError
 
 from .base import (
@@ -16,10 +17,10 @@ from .base import (
 # Pinned in code so an environment variable cannot send the key to another host.
 API_BASE_URL = "https://api.anthropic.com"
 _TRANSIENT_STATUSES = {408, 409, 429}
-# The docs (errors page, checked Oct 20, 2026) do not say which error responses are billed. A
-# 408 or 504 means the request timed out mid-processing, so it may have been; the rest are
-# rejections or capacity errors that did no model work.
+# Docs don't say which errors are billed; 408/504 may have been, the other statuses are assumed not.
 _USAGE_UNKNOWN_STATUSES = {408, 504}
+# The request never left the machine, so it cannot have been billed.
+_NEVER_SENT = (httpx2.ConnectError, httpx2.ConnectTimeout)
 
 
 class AnthropicClient:
@@ -58,10 +59,15 @@ class AnthropicClient:
                     "format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)},
                 },
             )
-        except anthropic.APITimeoutError:
-            raise TransientLLMError("the model request timed out", usage_known=False) from None
-        except anthropic.APIConnectionError:
-            raise TransientLLMError("could not connect to the model API", usage_known=False) from None
+        except anthropic.APITimeoutError as error:
+            # The SDK raises these `from` the httpx2 error, which says whether the request was sent.
+            raise TransientLLMError(
+                "the model request timed out", usage_known=isinstance(error.__cause__, _NEVER_SENT)
+            ) from None
+        except anthropic.APIConnectionError as error:
+            raise TransientLLMError(
+                "could not connect to the model API", usage_known=isinstance(error.__cause__, _NEVER_SENT)
+            ) from None
         except anthropic.APIStatusError as error:
             # Built from the status only: error bodies and request headers stay out of messages.
             message = f"the model API returned HTTP {error.status_code}"

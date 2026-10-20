@@ -154,6 +154,34 @@ def test_an_unknown_usage_attempt_can_push_a_later_attempt_over_the_dollar_cap()
     assert client.spent > Decimal("0.04")
 
 
+def test_unknown_usage_attempt_counts_its_output_toward_the_run_output_ceiling():
+    # Counting only input would leave 4,000 output tokens unaccounted and let the retry through.
+    tight = SETTINGS.model_copy(update={"max_run_output_tokens": 4_000 + 4_000 - 1})
+    client, inner, _ = metered([TransientLLMError("timed out", usage_known=False), '{"word": "a"}'], settings=tight)
+    with pytest.raises(BudgetExceeded, match="output tokens.*run ceiling"):
+        ask(client)
+    assert len(inner.requests) == 1 and client.output_tokens == 4_000
+
+
+def test_unknown_usage_attempt_counts_its_input_toward_the_run_input_ceiling():
+    estimate = estimate_input_tokens("sys", [{"role": "user", "content": "hi"}], Answer)
+    tight = SETTINGS.model_copy(update={"max_run_input_tokens": 2 * estimate - 1})
+    client, inner, _ = metered([TransientLLMError("timed out", usage_known=False), '{"word": "a"}'], settings=tight)
+    with pytest.raises(BudgetExceeded, match="input tokens.*run ceiling"):
+        ask(client)
+    assert len(inner.requests) == 1 and client.input_tokens == estimate
+
+
+def test_run_ceilings_allow_an_attempt_that_lands_exactly_on_them():
+    estimate = estimate_input_tokens("sys", [{"role": "user", "content": "hi"}], Answer)
+    exact = SETTINGS.model_copy(
+        update={"max_run_input_tokens": 2 * estimate, "max_run_output_tokens": 2 * 4_000}
+    )
+    client, inner, _ = metered([TransientLLMError("timed out", usage_known=False), '{"word": "a"}'], settings=exact)
+    assert ask(client).parsed.word == "a"
+    assert len(inner.requests) == 2
+
+
 # --- retries and logging ---------------------------------------------------------------
 
 def test_transient_errors_retry_twice_then_succeed():
@@ -268,19 +296,42 @@ def test_adapter_marks_only_possibly_billed_statuses_as_unknown_usage(status, us
     assert caught.value.usage_known is usage_known
 
 
-def test_timeouts_and_connection_failures_are_transient():
-    def timeout(request):
-        raise httpx2.ReadTimeout("slow", request=request)
+@pytest.mark.parametrize(
+    ("raised", "usage_known"),
+    [
+        (httpx2.ConnectError("no route"), True),
+        (httpx2.ConnectTimeout("slow connect"), True),
+        (httpx2.ReadTimeout("slow"), False),
+        (httpx2.WriteError("broken pipe"), False),
+        (httpx2.RemoteProtocolError("dropped"), False),
+    ],
+    ids=["connect-error", "connect-timeout", "read-timeout", "write-error", "dropped"],
+)
+def test_network_failures_are_transient_and_known_zero_only_if_never_sent(raised, usage_known):
+    def handler(request):
+        raise raised
 
-    def refused(request):
-        raise httpx2.ConnectError("no route", request=request)
+    client, seen = adapter(handler)
+    with pytest.raises(TransientLLMError) as caught:
+        ask(client)
+    assert len(seen) == 1
+    assert caught.value.usage_known is usage_known
 
-    for handler in (timeout, refused):
-        client, seen = adapter(handler)
-        with pytest.raises(TransientLLMError) as caught:
-            ask(client)
-        assert len(seen) == 1
-        assert caught.value.usage_known is False
+
+def test_flaky_network_that_never_connects_costs_nothing_extra():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) <= 2:
+            raise httpx2.ConnectError("no route", request=request)
+        return httpx2.Response(200, json=message_body('{"word": "a"}', usage=(120, 30)))
+
+    client, _ = adapter(handler)
+    metered_client = MeteredClient(client, SETTINGS, sleep=lambda seconds: None)
+    ask(metered_client)
+    assert metered_client.spent == cost_usd(SETTINGS.prices["claude-sonnet-5-5"], 120, 30)
+    assert "unknown usage" not in metered_client.usage_line()
 
 
 def test_refusal_truncation_and_bad_json_keep_their_usage():
