@@ -1,10 +1,13 @@
 """Budget checks, retries, cost accounting and the per-call debug log around any client."""
 
+import json
 import logging
 import math
 import time
 from collections.abc import Callable
 from decimal import Decimal
+
+from pydantic import BaseModel
 
 from ..config import LLMSettings, ModelPrices
 from .base import (
@@ -22,13 +25,15 @@ log = logging.getLogger("daily_digest.llm")
 
 MAX_ATTEMPTS = 3  # the first try plus two retries
 _BACKOFF_SECONDS = (1.0, 2.0)
-_CHARS_PER_TOKEN = 3  # below real English (~4) so the estimate errs high
+_CHARS_PER_TOKEN = 2.7  # measured about 2.8 on real digests (Oct 2026), so the estimate errs a little high
 _MILLION = Decimal(1_000_000)
 
 
-def estimate_input_tokens(system: str, messages: list[dict]) -> int:
-    """A cheap upper-ish estimate; the exact count is only known from the reply."""
+def estimate_input_tokens(system: str, messages: list[dict], schema: type[BaseModel] | None = None) -> int:
+    """A cheap estimate that errs a little high; the exact count is only known from the reply."""
     chars = len(system) + sum(len(str(m["content"])) for m in messages)
+    if schema is not None:
+        chars += len(json.dumps(schema.model_json_schema()))  # the output format is sent as input too
     return math.ceil(chars / _CHARS_PER_TOKEN)
 
 
@@ -70,7 +75,7 @@ class MeteredClient:
         self, *, system: str, messages: list[dict], schema: type[T], max_tokens: int
     ) -> LLMResult[T]:
         for attempt in range(1, MAX_ATTEMPTS + 1):
-            self._check_budget(system, messages, max_tokens, attempt)
+            self._check_budget(system, messages, schema, max_tokens, attempt)
             try:
                 result = self._inner.complete(
                     system=system, messages=messages, schema=schema, max_tokens=max_tokens
@@ -91,9 +96,11 @@ class MeteredClient:
             return result
         raise AssertionError("unreachable")
 
-    def _check_budget(self, system: str, messages: list[dict], max_tokens: int, attempt: int) -> None:
+    def _check_budget(
+        self, system: str, messages: list[dict], schema: type[BaseModel], max_tokens: int, attempt: int
+    ) -> None:
         s = self._settings
-        estimated_in = estimate_input_tokens(system, messages)
+        estimated_in = estimate_input_tokens(system, messages, schema)
         worst = self.spent + cost_usd(self._prices, estimated_in, max_tokens)
         problem = None
         if estimated_in > s.max_input_tokens:

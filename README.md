@@ -32,7 +32,7 @@ A day with fewer than three items makes no model call and prints a "No significa
 
 ## Model access and cost
 
-`draft` without `--stub` calls the Anthropic API once per run. Model, prices, and caps live in `config/settings.toml`. The default hard cap is **$0.25 per run** (one call is typically 2 to 4 cents; a retry after a failed check can double it). Before each call the app estimates the worst case (about three characters per token, which errs high for English but can undercount other languages) and makes no call if the estimate would cross the cap; the real cost is computed from the usage the API returns. Prices in the file are third-party-reported; check them against the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
+`draft` without `--stub` calls the Anthropic API once per run. Model, prices, and caps live in `config/settings.toml`. The default hard cap is **$0.25 per run** (one call is typically 2 to 4 cents; a retry after a failed check can double it). Before each call the app estimates the worst case (about 2.7 characters per token plus the output format, calibrated on real digests, which errs a little high for English but can undercount other languages) and makes no call if the estimate would cross the cap; the real cost is computed from the usage the API returns. Prices in the file are third-party-reported; check them against the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
 
 ### 1. Create a key
 

@@ -17,6 +17,7 @@ MIN_ITEMS = 3
 MAX_HEADLINE_WORDS = 12
 MIN_BODY_WORDS = 200
 MAX_BODY_WORDS = 500
+AIM_BODY_WORDS = "250 to 400"
 MIN_QUOTE_CHARS = 15  # a shorter "quote" is a word or two that would pass the substring check anywhere
 MIN_SPEAKER_CHARS = 3
 MAX_NOTE_TEXT = 200  # enough for the author to judge a dropped sentence without flooding the terminal
@@ -59,7 +60,9 @@ other quotation marks around passages. The headline may use only facts stated in
 
 Style: neutral, concise, executive tone for a time-poor C-level reader. No hype, marketing \
 language, emoji, or unexplained acronyms. Short paragraphs. The two sections together are \
-{MIN_BODY_WORDS} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words.
+{MIN_BODY_WORDS} to {MAX_BODY_WORDS} words; aim for {AIM_BODY_WORDS} so that a sentence dropped by \
+the checks cannot take you under the minimum. The headline is at most {MAX_HEADLINE_WORDS} words: \
+count them.
 
 No opinion, prediction, advice, evaluation, or "so what" of your own. An implication for \
 adoption leaders may appear only if a source stated it, with attribution. Keep the source's \
@@ -186,13 +189,29 @@ def _unsupported_host(text: str, sources: list[str]) -> str | None:
     return None
 
 
+def _core(quote: str) -> str:
+    """A quote without the comma or full stop that the surrounding sentence puts after it.
+
+    Sources print `...period,"` and writers print `...period."`; the words are the same. A trailing
+    `?` or `!` is kept because it changes what was said.
+    """
+    return normalize(quote).rstrip(",.;: ")
+
+
 def _quoted_passages(text: str) -> list[str]:
-    spans = (normalize(next(g for g in match.groups() if g)) for match in _QUOTED_SPAN.finditer(text))
+    spans = (_core(next(g for g in match.groups() if g)) for match in _QUOTED_SPAN.finditer(text))
     return [span for span in spans if len(span) >= MIN_QUOTE_CHARS]
 
 
 def _clip(text: str) -> str:
     return text if len(text) <= MAX_NOTE_TEXT else text[:MAX_NOTE_TEXT] + "..."
+
+
+def _names_for(speaker: str) -> list[str]:
+    """The full name, and the surname alone: sources name "Will Sommer", sentences then say "Sommer"."""
+    parts = speaker.split()
+    last = parts[-1] if len(parts) > 1 else ""
+    return [speaker, last] if len(last) >= MIN_SPEAKER_CHARS and last[0].isupper() else [speaker]
 
 
 def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tuple[str, str] | None:
@@ -215,7 +234,7 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tup
         return "mentions a host name that is not in the cited items", f" ({host!r})"
 
     if sentence.type == "quote":
-        quote = normalize(sentence.quote or "")
+        quote = _core(sentence.quote or "")
         if has_url(sentence.quote or ""):
             return "quote contains a URL", ""
         if len(quote) < MIN_QUOTE_CHARS:
@@ -232,7 +251,7 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tup
             return "speaker is missing or is not a name", ""
         if not any(_contains(text_, speaker) for text_ in named_in):
             return "speaker is not named in the cited item", ""
-        if not _contains(normalized_text, speaker):
+        if not any(_contains(normalized_text, name) for name in _names_for(speaker)):
             return "speaker is not named in the sentence", ""
     # Any quoted passage must be real, whatever type the model gave the sentence.
     for passage in _quoted_passages(text):
@@ -328,6 +347,7 @@ def _generate(
     section_ids: tuple[set[str], set[str]] | None = None,
 ) -> tuple[Draft, list[str]]:
     """Ask, check, and ask once more with the problems appended; then give up."""
+    earlier: list[str] = []  # what the failed first draft dropped, so a retry does not hide it
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             result = client.complete(
@@ -340,8 +360,9 @@ def _generate(
         else:
             checked = check_draft(result.parsed, sent, max_sentences=max_sentences, section_ids=section_ids)
             if not checked.problems:
-                return checked.draft, checked.notes
+                return checked.draft, [*earlier, *checked.notes]
             problems, notes, dropped = checked.problems, checked.notes, checked.dropped
+            earlier = [f"first draft, {note}" for note in notes]
             reply = result.parsed.model_dump_json()
         # Fixed wording only: nothing from the reply or the draft may be built into these strings.
         log.debug(

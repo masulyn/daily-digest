@@ -300,3 +300,13 @@ def test_bad_settings_fail_naming_the_key(tmp_path, changes, key):
 def test_missing_settings_file_is_reported(tmp_path):
     with pytest.raises(SettingsError, match="not found"):
         load_llm_settings(tmp_path / "nope.toml")
+
+
+def test_the_input_estimate_counts_the_output_format_and_errs_a_little_high():
+    from daily_digest.contracts import Draft
+    from daily_digest.llm.metered import estimate_input_tokens
+
+    text = "x" * 34_154  # the Oct 2026 digest prompt: system plus 20 items, 12,572 input tokens measured
+    with_format = estimate_input_tokens("", [{"content": text}], Draft)
+    assert with_format > estimate_input_tokens("", [{"content": text}])
+    assert 12_572 <= with_format <= 12_572 * 1.15
