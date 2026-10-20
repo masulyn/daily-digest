@@ -49,6 +49,8 @@ class ItemSummary(BaseModel):
 
 SentenceType = Literal["factual", "quote", "attributed_opinion", "trend", "transition"]
 SectionName = Literal["what_you_need_to_know", "worth_a_closer_look"]
+# One flat enum: a union with a one-value Literal is sent to the API as an unconstrained string.
+IssueSection = Literal["what_you_need_to_know", "worth_a_closer_look", "headline"]
 
 
 class DraftSentence(BaseModel):
@@ -71,7 +73,7 @@ class Draft(BaseModel):
 class DraftIssue(BaseModel):
     """A required change to one sentence (or to the headline when `index` is None)."""
 
-    section: SectionName | Literal["headline"]
+    section: IssueSection
     index: int | None = None
     required_change: str = Field(min_length=1)
 
@@ -87,7 +89,7 @@ ReviewStatus = Literal["approved", "not_converged", "degraded", "unreviewed", "f
 class ReviewIssue(BaseModel):
     """One problem with one sentence (or the headline). It asks for a reword or a removal, never an addition."""
 
-    section: SectionName | Literal["headline"]
+    section: IssueSection
     index: int | None = None  # sentence position within the section, counted from 0; absent for the headline
     severity: Severity
     category: IssueCategory

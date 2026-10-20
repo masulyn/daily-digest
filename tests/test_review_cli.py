@@ -1,3 +1,4 @@
+import json
 import sys
 from datetime import date
 
@@ -184,3 +185,21 @@ def test_a_reviewer_that_errors_in_round_one_gives_an_unreviewed_digest_and_a_no
     out = capsys.readouterr().out
     assert "review: NOT REVIEWED" in out and "the reviewer could not run: the model API returned HTTP 401" in out
     assert out.splitlines()[-1].startswith("usage: 2 call(s)")
+
+
+def test_the_schema_sent_for_the_review_constrains_section_and_category_to_enums(db, monkeypatch):
+    seen = []
+    real_send = httpx2.Client.send
+
+    def capture(self, request, **kwargs):
+        seen.append(json.loads(request.content))
+        return real_send(self, request, **kwargs)
+
+    monkeypatch.setattr(httpx2.Client, "send", capture)
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert draft_cli(monkeypatch, db) == 0
+    review_request = next(r for r in seen if "reviewer of a draft" in r["system"])
+    props = review_request["output_config"]["format"]["schema"]["$defs"]["ReviewIssue"]["properties"]
+    # a union with a one-value Literal would reach the API as an unconstrained string
+    assert props["section"]["enum"] == ["what_you_need_to_know", "worth_a_closer_look", "headline"]
+    assert set(props["severity"]["enum"]) == {"blocking", "advisory"} and "unsupported" in props["category"]["enum"]
