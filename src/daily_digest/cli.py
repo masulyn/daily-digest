@@ -20,6 +20,7 @@ from .config import (
     load_llm_settings,
     load_sources,
 )
+from .contracts import ReviewSummary
 from .digest import render_markdown
 from .editor import WriterFailed
 from .extract import extract_articles
@@ -133,10 +134,16 @@ def _printable(text: str) -> str:
     return "".join(c if c.isprintable() or c == "\n" else " " for c in text)
 
 
-def run_draft(db_path: Path, target: date, client: MeteredClient | None = None) -> int:
-    """Print the day's digest from the local database, or stub summaries without a client."""
+def run_draft(
+    db_path: Path, target: date, client: MeteredClient | None = None, review_enabled: bool = True
+) -> int:
+    """Print the day's digest from the local database, or stub summaries without a client.
+
+    Exit codes: 0 reviewed (or nothing to write), 1 error or an unrepairable draft, 2 setup problem,
+    3 the digest was not reviewed and must not be published.
+    """
     try:
-        return _print_draft(db_path, target, client)
+        return _print_draft(db_path, target, client, review_enabled)
     except (LLMError, WriterFailed) as error:
         print(f"error: {_printable(str(error))}", file=sys.stderr)
         return 1
@@ -145,23 +152,47 @@ def run_draft(db_path: Path, target: date, client: MeteredClient | None = None) 
             print(client.usage_line())
 
 
-def _print_draft(db_path: Path, target: date, client: MeteredClient | None) -> int:
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def _review_lines(review: ReviewSummary) -> list[str]:
+    rounds = f"{review.rounds} round(s)"
+    removed = f"; {_plural(review.removed, 'sentence')} removed" if review.removed else ""
+    head = {
+        "approved": f"review: approved after {rounds}",
+        "not_converged": f"review: not converged after {rounds}{removed}",
+        "degraded": f"review: degraded at 80% of the budget after {rounds}{removed}",
+        "unreviewed": "review: NOT REVIEWED",
+        "failed": f"review: FAILED after {rounds}; the draft could not be repaired",
+    }[review.status]
+    return [head, *[f"  - unresolved: {t}" for t in review.unresolved], *[f"  - advisory: {t}" for t in review.advisory]]
+
+
+def _print_draft(db_path: Path, target: date, client: MeteredClient | None, review_enabled: bool) -> int:
     store = _open_existing(db_path)
     if store is None:
         return 2
     with store:
-        state = run_digest(store, target, client)
+        state = run_digest(store, target, client, review_enabled=review_enabled)
     by_id = {item.id: item for item in state.items}
     for summary in state.summaries:
         item = by_id[summary.item_id]
         print(_printable(f"{item.title} ({item.source})"))
         print("\n".join(f"- {_printable(point)}" for point in summary.key_points))
         print(_printable(f"  {summary.source_url}"))
+    review = state.review
+    if state.digest and review and review.status == "unreviewed":
+        print("NOT REVIEWED: this digest has not been checked and must not be published.\n")
     if state.digest:
         print(_printable(render_markdown(state.digest)))
+    if review:
+        print(_printable("\n" + "\n".join(_review_lines(review))))
     for note in state.notes:
         print(_printable(note))
-    return 0
+    if review and review.status == "failed":
+        return 1
+    return 3 if review and review.status == "unreviewed" else 0
 
 
 class _PrintableFormatter(logging.Formatter):
@@ -204,7 +235,7 @@ def main() -> None:
         "--days", type=_positive_int, default=DEFAULT_EXTRACT_DAYS,
         help="only fetch items published in the last N days (default 2: yesterday and today)",
     )
-    d = sub.add_parser("draft", help="write the digest from one day's stored items with one model call (no fetching)")
+    d = sub.add_parser("draft", help="write and review the digest from one day's stored items (no fetching)")
     d.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     d.add_argument(
         "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",
@@ -212,6 +243,10 @@ def main() -> None:
     )
     d.add_argument("--stub", action="store_true", help="offline placeholder summaries; no model, no key")
     d.add_argument("--debug", action="store_true", help="log every model call to stderr")
+    d.add_argument(
+        "--no-review", action="store_true",
+        help="skip the Reviewer (cheaper; the digest is marked NOT REVIEWED and the exit code is 3)",
+    )
     args = parser.parse_args()
     if args.command == "draft":
         target = args.date or date.today() - timedelta(days=1)
@@ -221,7 +256,7 @@ def main() -> None:
             if client is None:
                 raise SystemExit(2)
         with _debug_logging(args.debug):
-            raise SystemExit(run_draft(args.db or data_dir() / "digest.db", target, client))
+            raise SystemExit(run_draft(args.db or data_dir() / "digest.db", target, client, not args.no_review))
     if args.command == "extract":
         raise SystemExit(run_extract(args.db or data_dir() / "digest.db", args.limit, args.days))
     if args.command == "ingest":

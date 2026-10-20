@@ -52,6 +52,7 @@ class LLMSettings(BaseModel):
     max_output_tokens: int = Field(gt=0)
     max_run_input_tokens: int = Field(gt=0)
     max_run_output_tokens: int = Field(gt=0)
+    max_review_rounds: int = Field(ge=1)
     request_timeout_seconds: float = Field(gt=0)
 
     @model_validator(mode="after")

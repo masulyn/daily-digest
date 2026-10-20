@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -10,7 +11,7 @@ from pydantic import SecretStr
 
 from daily_digest import cli
 from daily_digest.config import load_llm_settings
-from daily_digest.contracts import Draft, DraftIssue
+from daily_digest.contracts import Draft, DraftIssue, ReviewResult
 from daily_digest.editor import (
     EXCLUDE_TIER,
     HIGH_TIER,
@@ -460,6 +461,9 @@ def fake_api(monkeypatch, handler):
 
 
 def good_reply(request):
+    """A draft for the Writer's request and an approval for the Reviewer's."""
+    if "reviewer of a draft" in json.loads(request.content)["system"]:
+        return httpx2.Response(200, json=message_body(ReviewResult(verdict="approve").model_dump_json()))
     return httpx2.Response(200, json=message_body(make_draft(250).model_dump_json()))
 
 
@@ -475,7 +479,8 @@ def test_draft_prints_the_markdown_digest_then_notes_then_the_usage_line(db, mon
     assert lines[0] == f"# {HEADLINE}"
     headings = [line for line in lines if line.startswith("## ")]
     assert headings == ["## What you need to know", "## Worth a closer look", "## Sources"]
-    assert lines[-1].startswith("usage: 1 call(s), 2,400 tokens in, 700 out, $0.0118")
+    assert "review: approved after 1 round(s)" in lines and lines[lines.index("review: approved after 1 round(s)") - 1] == ""
+    assert lines[-1].startswith("usage: 2 call(s), 4,800 tokens in, 1,400 out, $0.0236")
     assert any(line.startswith("1. [") and "news.example.com/a3" in line for line in lines)
 
 
@@ -548,11 +553,10 @@ def test_a_failed_call_still_prints_usage(db, monkeypatch, capsys):
 def test_debug_run_logs_each_call_and_leaks_nothing(db, monkeypatch, capfd):
     monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
     monkeypatch.delenv("ANTHROPIC_LOG", raising=False)
-    answers = iter([httpx2.Response(429, json={"error": {"message": f"slow down {FAKE_KEY}"}}), None])
+    slow = [httpx2.Response(429, json={"error": {"message": f"slow down {FAKE_KEY}"}})]
 
     def handler(request):
-        reply = next(answers)
-        return reply or good_reply(request)
+        return slow.pop() if slow else good_reply(request)
 
     fake_api(monkeypatch, handler)
     slept = []
@@ -560,8 +564,9 @@ def test_debug_run_logs_each_call_and_leaks_nothing(db, monkeypatch, capfd):
     assert run_main(monkeypatch, *draft_args(db, "--debug")) == 0
     captured = capfd.readouterr()
     assert slept == [1.0]  # the retry backed off without really sleeping
-    assert captured.err.count("llm call") == 2
+    assert captured.err.count("llm call") == 3  # the 429, the draft, the review
     assert "outcome=transient_error" in captured.err and "outcome=ok" in captured.err
+    assert "review round 1 mechanical=0 model=0 blocking=0 status=approved" in captured.err
     assert FAKE_KEY not in captured.out and FAKE_KEY not in captured.err
     assert "alpha alpha" not in captured.err  # no request or response bodies in the log
     assert "ANTHROPIC_LOG" not in os.environ

@@ -7,7 +7,7 @@ markers, the Sources list and all citation metadata come from stored items, neve
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .contracts import CandidateItem, Draft, DraftIssue, DraftSentence
 from .digest import sentences, word_count
@@ -151,13 +151,14 @@ class Checked:
     notes: list[str]  # sentences dropped, and why
     problems: list[str]  # reasons to ask the model again
     dropped: list[str]  # why each sentence was dropped, without its text
+    flagged: list[tuple[str, int, str]] = field(default_factory=list)  # section, index from 0, reason
 
 
 class WriterFailed(Exception):
     """The model could not produce a draft that passes the checks."""
 
 
-def _escape(text: str) -> str:
+def escape(text: str) -> str:
     # The block delimiters use angle brackets, so none can survive inside item text.
     return text.replace("<", "‹").replace(">", "›")
 
@@ -181,11 +182,11 @@ def render_items(items: list[CandidateItem]) -> tuple[str, dict[str, SentItem]]:
     """The item blocks and, per item id, exactly the text that was sent for it."""
     blocks, sent = [], {}
     for item in items:
-        item_id, title = _escape(item.id), _escape(item.title)
-        body = _escape(item.article_text or item.extract)
-        sent[item.id] = SentItem(title=title, body=body, source=_escape(item.source))
+        item_id, title = escape(item.id), escape(item.title)
+        body = escape(item.article_text or item.extract)
+        sent[item.id] = SentItem(title=title, body=body, source=escape(item.source))
         blocks.append(
-            f"<<<ITEM {item_id}>>>\nsource: {_escape(item.source)}\ntitle: {title}\n"
+            f"<<<ITEM {item_id}>>>\nsource: {escape(item.source)}\ntitle: {title}\n"
             f"published: {item.published.isoformat()}\ntext: {body}\n<<<END ITEM {item_id}>>>"
         )
     return "\n\n".join(blocks), sent
@@ -213,7 +214,7 @@ def _quoted_passages(text: str) -> list[str]:
     return [span for span in spans if len(span) >= MIN_QUOTE_CHARS]
 
 
-def _clip(text: str) -> str:
+def clip(text: str) -> str:
     return text if len(text) <= MAX_NOTE_TEXT else text[:MAX_NOTE_TEXT] + "..."
 
 
@@ -235,7 +236,7 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tup
         return "contains a URL or a citation marker", ""
     unknown = [i for i in sentence.item_ids if i not in sent]
     if unknown:
-        return "cites an item that was not provided", f" (item {_clip(unknown[0])!r})"
+        return "cites an item that was not provided", f" (item {clip(unknown[0])!r})"
     if sentence.type == "trend" and len(sentence.item_ids) < 2:
         return "a trend must cite at least two items", ""
     if sentence.type not in ("trend", "transition") and not sentence.item_ids:
@@ -303,7 +304,7 @@ def check_draft(
     `max_sentences` caps the two sections and `section_ids` limits each section to the items it
     already cited, so a revision can reword or remove but not add.
     """
-    notes, problems, dropped = [], [], []
+    notes, problems, dropped, flagged = [], [], [], []
     kept: dict[str, list[DraftSentence]] = {}
     for position, name in enumerate(("what_you_need_to_know", "worth_a_closer_look")):
         kept[name] = []
@@ -314,9 +315,10 @@ def check_draft(
             if not reason and section_ids and not set(cleaned.item_ids) <= section_ids[position]:
                 reason = "cites an item this section did not cite before"
             if reason:
-                shown = _clip(cleaned.text)
+                shown = clip(cleaned.text)
                 notes.append(f'dropped {name} sentence {number} ({cleaned.type}): "{shown}" - {reason}{detail}')
                 dropped.append(f"{name} sentence {number}: {reason}")
+                flagged.append((name, number - 1, reason))
             else:
                 kept[name].append(cleaned)
         if not kept[name]:
@@ -343,7 +345,7 @@ def check_draft(
         or len(draft.worth_a_closer_look) > max_sentences[1]
     ):
         problems.append("the revision adds sentences; it may only reword or remove")
-    return Checked(checked, notes, problems, dropped)
+    return Checked(checked, notes, problems, dropped, flagged)
 
 
 def _feedback(checked_problems: list[str], notes: list[str]) -> str:
@@ -420,9 +422,14 @@ def fit_items(items: list[CandidateItem], client: BudgetedClient) -> tuple[list[
     return fitted, notes
 
 
-def write_draft(items: list[CandidateItem], client: BudgetedClient) -> tuple[Draft, list[str]]:
-    """The draft and notes about dropped sentences. Needs at least MIN_ITEMS items."""
-    items, fit_notes = fit_items(items, client)
+def write_draft(
+    items: list[CandidateItem], client: BudgetedClient, *, fit: bool = True
+) -> tuple[Draft, list[str]]:
+    """The draft and notes about dropped sentences. Needs at least MIN_ITEMS items.
+
+    Pass `fit=False` with items already shrunk by `fit_items`, so the caller keeps the exact items sent.
+    """
+    items, fit_notes = fit_items(items, client) if fit else (items, [])
     if len(items) < MIN_ITEMS:
         raise WriterFailed(f"fewer than {MIN_ITEMS} items fit within the input limit")
     prompt, sent = render_items(items)
@@ -453,8 +460,8 @@ def revise(
         for issue in issues
     )
     prompt = (
-        f"Previous draft (JSON):\n{_escape(draft.model_dump_json())}\n\n"
-        f"Issues to resolve:\n{_escape(problems)}\n\nItems the draft cited:\n\n{blocks}"
+        f"Previous draft (JSON):\n{escape(draft.model_dump_json())}\n\n"
+        f"Issues to resolve:\n{escape(problems)}\n\nItems the draft cited:\n\n{blocks}"
     )
     limits = (len(draft.what_you_need_to_know), len(draft.worth_a_closer_look))
     cited_by_section = (

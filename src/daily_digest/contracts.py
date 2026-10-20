@@ -2,9 +2,9 @@
 
 from datetime import date
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field
 
 
 class ErrorCode(StrEnum):
@@ -49,6 +49,8 @@ class ItemSummary(BaseModel):
 
 SentenceType = Literal["factual", "quote", "attributed_opinion", "trend", "transition"]
 SectionName = Literal["what_you_need_to_know", "worth_a_closer_look"]
+# One flat enum: a union with a one-value Literal is sent to the API as an unconstrained string.
+IssueSection = Literal["what_you_need_to_know", "worth_a_closer_look", "headline"]
 
 
 class DraftSentence(BaseModel):
@@ -71,9 +73,43 @@ class Draft(BaseModel):
 class DraftIssue(BaseModel):
     """A required change to one sentence (or to the headline when `index` is None)."""
 
-    section: SectionName | Literal["headline"]
+    section: IssueSection
     index: int | None = None
     required_change: str = Field(min_length=1)
+
+
+Severity = Literal["blocking", "advisory"]
+IssueCategory = Literal[
+    "unsupported", "overstated", "opinion", "promotional", "hedge_lost",
+    "attribution", "disagreement", "tone", "other",
+]
+ReviewStatus = Literal["approved", "not_converged", "degraded", "unreviewed", "failed"]
+
+
+class ReviewIssue(BaseModel):
+    """One problem with one sentence (or the headline). It asks for a reword or a removal, never an addition."""
+
+    section: IssueSection
+    index: int | None = None  # sentence position within the section, counted from 0; absent for the headline
+    severity: Severity
+    category: IssueCategory
+    required_change: Annotated[str, BeforeValidator(lambda v: v.strip()[:300] if isinstance(v, str) else v)] = Field(
+        min_length=1, max_length=300
+    )  # the API cannot enforce a length, so an over-long reply is clipped rather than failing it
+
+
+class ReviewResult(BaseModel):
+    issues: list[ReviewIssue] = Field(default_factory=list)
+    # The model's own verdict is never trusted; code recomputes it from the issues.
+    verdict: Literal["approve", "revise"] = "revise"
+
+
+class ReviewSummary(BaseModel):
+    status: ReviewStatus
+    rounds: int = Field(default=0, ge=0)  # model reviews that ran
+    removed: int = Field(default=0, ge=0)  # sentences code removed because they stayed blocked
+    unresolved: list[str] = Field(default_factory=list)  # blocking issues left, as text
+    advisory: list[str] = Field(default_factory=list)
 
 
 class CitedSource(BaseModel):
@@ -94,3 +130,4 @@ class FinalDigest(BaseModel):
     word_count: int
     reading_time_minutes: int
     notes: list[str] = Field(default_factory=list)
+    review: ReviewSummary = Field(default_factory=lambda: ReviewSummary(status="unreviewed"))
