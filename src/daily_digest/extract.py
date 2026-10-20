@@ -12,6 +12,7 @@ server errors, timeouts) are retried on later runs, up to MAX_EXTRACTION_ATTEMPT
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from urllib.parse import urlsplit
 
 from .contracts import ErrorCode
@@ -114,11 +115,12 @@ def extract_articles(
     *,
     set_host_delay: Callable[[str, float], None] | None = None,
     limit: int | None = None,
+    since: datetime | None = None,
 ) -> ExtractionReport:
     """Extract text for items flagged at ingest that are still waiting for it."""
     report = ExtractionReport()
     allow = _guard(robots, set_host_delay)
-    for item_id, url in store.pending_extraction(limit):
+    for item_id, url in store.pending_extraction(limit, since):
         report.considered += 1
         try:
             status, body = fetch(url, allow=allow)

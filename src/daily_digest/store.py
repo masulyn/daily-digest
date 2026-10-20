@@ -184,14 +184,23 @@ class Store:
             for r in rows
         ]
 
-    def pending_extraction(self, limit: int | None = None) -> list[tuple[str, str]]:
-        """(id, URL) of items flagged for extraction that have not been attempted, newest first."""
+    def pending_extraction(
+        self, limit: int | None = None, since: datetime | None = None
+    ) -> list[tuple[str, str]]:
+        """(id, URL) of items flagged for extraction that have not been attempted, newest first.
+
+        With `since`, only items published at or after it; the rest stay pending untouched.
+        """
         sql = (
             "SELECT id, canonical_url FROM items WHERE needs_extraction = 1"
             " AND article_text IS NULL AND extraction_attempted_at IS NULL"
-            " AND extraction_attempts < ? ORDER BY published_at DESC"
+            " AND extraction_attempts < ?"
         )
         params: tuple = (MAX_EXTRACTION_ATTEMPTS,)
+        if since is not None:
+            sql += " AND published_at >= ?"
+            params += (_utc(since),)
+        sql += " ORDER BY published_at DESC"
         if limit is not None:
             sql += " LIMIT ?"
             params += (limit,)
