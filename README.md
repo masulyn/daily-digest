@@ -71,20 +71,23 @@ Without a key, `draft` exits with a one-line error; `draft --stub` needs none.
 
 CI runs [Gitleaks](https://github.com/gitleaks/gitleaks) on the commits of every push to `main` and every pull request, and fails the build on a finding. A feature branch is covered once its PR is open. The job downloads a pinned release binary and checks it against a pinned sha256 taken from the release's published checksums file. It has read-only permissions, and CI uses no secrets or tokens at all (the tests use the mock LLM provider).
 
-To scan locally on macOS, download the same release with `curl` (unlike a browser, it does not trigger Gatekeeper quarantine), check the hash, and run the binary from where you extracted it. Use `arm64` on Apple silicon and `x64` on Intel:
+To scan locally on macOS, download the same release with `curl` (unlike a browser, it does not trigger Gatekeeper quarantine), check its sha256 (the command fails if it differs), and run the binary from where you extracted it. Use `arm64` on Apple silicon and `x64` on Intel:
 
 ```
 V=8.30.1; ARCH=arm64   # or x64
+case $ARCH in
+  arm64) SUM=b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 ;;
+  x64)   SUM=dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709 ;;
+esac
 curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_darwin_$ARCH.tar.gz"
-# arm64: b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5
-# x64:   dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709
-shasum -a 256 gitleaks.tar.gz   # must print the hash for your ARCH
+echo "$SUM  gitleaks.tar.gz" | shasum -a 256 -c -   # stops here if the hash differs
 mkdir -p ~/bin/gitleaks-$V && tar -xzf gitleaks.tar.gz -C ~/bin/gitleaks-$V gitleaks
 ```
 
 Then scan the whole history of every branch from the repo root. `--redact` keeps any secret out of the output:
 
 ```
+V=8.30.1   # same version as above; set it again in a new terminal
 ~/bin/gitleaks-$V/gitleaks git --log-opts="--all" --redact .
 ```
 
