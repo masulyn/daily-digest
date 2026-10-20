@@ -25,7 +25,7 @@ log = logging.getLogger("daily_digest.llm")
 
 MAX_ATTEMPTS = 3  # the first try plus two retries
 _BACKOFF_SECONDS = (1.0, 2.0)
-_CHARS_PER_TOKEN = 2.7  # measured about 2.8 on real digests (Oct 2026), so the estimate errs a little high
+_CHARS_PER_TOKEN = 2.7  # one real digest measured 2.8; text heavy in digits or URLs can run lower
 _MILLION = Decimal(1_000_000)
 
 

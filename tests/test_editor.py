@@ -717,6 +717,35 @@ def test_a_clean_first_draft_has_no_first_draft_notes():
     assert write_draft(items(), MockClient([make_draft(250)]))[1] == []
 
 
-def test_the_prompt_sets_a_word_target_with_headroom_and_asks_for_the_headline_count():
+def test_only_the_writing_prompt_sets_a_word_target_but_both_ask_for_the_headline_count():
+    assert "aim for 250 to 400" in SYSTEM_PROMPT  # a revision must not be invited to add text
+    assert "aim for" not in REVISE_PROMPT
     for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
-        assert "aim for 250 to 400" in prompt and "count them" in prompt
+        assert "count them" in prompt
+
+
+def test_suffixes_and_long_organization_names_do_not_count_as_surnames():
+    from daily_digest.editor import _names_for
+
+    assert _names_for("Will Sommer") == ["Will Sommer", "Sommer"]
+    assert _names_for("Martin Luther King Jr.") == ["Martin Luther King Jr.", "King"]
+    assert _names_for("John Smith III") == ["John Smith III", "Smith"]
+    assert _names_for("Jr. Smith") == ["Jr. Smith"]  # one real token left
+    assert _names_for("Department of the Interior Office") == ["Department of the Interior Office"]
+    assert _names_for("Gartner") == ["Gartner"]
+    assert _names_for("Dr. J.") == ["Dr. J."]
+
+
+def test_an_ellipsis_in_a_quote_is_not_forgiven_but_three_dots_are_stripped_like_a_full_stop():
+    core = "Enterprise AI revenue will be insufficient to support returns"
+    for ending, ok in (("...", True), ("…", False)):
+        said = core + ending
+        notes = checked_notes(sentence("quote", ids=("g",), text=f"Will Sommer said, “{said}”", quote=said, speaker="Will Sommer"))
+        assert (notes == []) is ok
+
+
+def test_a_second_bad_draft_after_dropped_sentences_still_fails_clearly():
+    first = make_draft(150)
+    first.what_you_need_to_know.append(sentence("factual", ids=("nope",)))
+    with pytest.raises(WriterFailed, match="failed the checks twice"):
+        write_draft(items(), MockClient([first, make_draft(150)]))

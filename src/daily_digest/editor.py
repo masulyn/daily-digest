@@ -60,8 +60,7 @@ other quotation marks around passages. The headline may use only facts stated in
 
 Style: neutral, concise, executive tone for a time-poor C-level reader. No hype, marketing \
 language, emoji, or unexplained acronyms. Short paragraphs. The two sections together are \
-{MIN_BODY_WORDS} to {MAX_BODY_WORDS} words; aim for {AIM_BODY_WORDS} so that a sentence dropped by \
-the checks cannot take you under the minimum. The headline is at most {MAX_HEADLINE_WORDS} words: \
+{MIN_BODY_WORDS} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words: \
 count them.
 
 No opinion, prediction, advice, evaluation, or "so what" of your own. An implication for \
@@ -93,6 +92,9 @@ Relevance:
 - Medium relevance, use only when the item itself states an enterprise implication: {MEDIUM_TIER}
 - Exclude, skip these: {EXCLUDE_TIER}
 
+Length: aim for {AIM_BODY_WORDS} words in the two sections, so that a sentence dropped by the \
+checks cannot take you under the minimum.
+
 Content:
 - "What you need to know" (what_you_need_to_know): 2 to 4 trends or developments.
 - "Worth a closer look" (worth_a_closer_look): 1 to 3 distinctive viewpoints, facts, or quotes, \
@@ -121,6 +123,7 @@ _URL = re.compile(
     r"|(?i:\b[a-z][\w-]*(?:\.[a-z][\w-]*)+/)"
 )
 _HOST = re.compile(rf"(?i)\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:{_TLDS})\b")
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv"}
 _MARKER = re.compile(r"\[\d+\]")
 # A heading, quote, bullet or list number only when followed by a space, so "-3%" and "+5%" keep their sign.
 _LEADING_MARKDOWN = re.compile(r"^(?:(?:#{1,6}|>|[-+*]|\d+[.)])\s+|\s+)+")
@@ -208,10 +211,14 @@ def _clip(text: str) -> str:
 
 
 def _names_for(speaker: str) -> list[str]:
-    """The full name, and the surname alone: sources name "Will Sommer", sentences then say "Sommer"."""
-    parts = speaker.split()
-    last = parts[-1] if len(parts) > 1 else ""
-    return [speaker, last] if len(last) >= MIN_SPEAKER_CHARS and last[0].isupper() else [speaker]
+    """The full name, and for a person's name the surname alone: sources name "Will Sommer", sentences say "Sommer".
+
+    Longer names are usually organizations, and a suffix or abbreviation is not a surname.
+    """
+    parts = [p for p in speaker.split() if p.rstrip(".").lower() not in _NAME_SUFFIXES]
+    last = parts[-1] if 2 <= len(parts) <= 3 else ""
+    usable = len(last) >= MIN_SPEAKER_CHARS and last[0].isupper() and not last.endswith(".")
+    return [speaker, last] if usable else [speaker]
 
 
 def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tuple[str, str] | None:
