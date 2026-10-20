@@ -1,6 +1,7 @@
 """Anthropic Messages API adapter. The only module that imports the Anthropic SDK."""
 
 import anthropic
+import httpx2
 from pydantic import SecretStr, ValidationError
 
 from .base import (
@@ -16,6 +17,10 @@ from .base import (
 # Pinned in code so an environment variable cannot send the key to another host.
 API_BASE_URL = "https://api.anthropic.com"
 _TRANSIENT_STATUSES = {408, 409, 429}
+# Docs don't say which errors are billed; 408/504 may have been, the other statuses are assumed not.
+_USAGE_UNKNOWN_STATUSES = {408, 504}
+# The request never left the machine, so it cannot have been billed.
+_NEVER_SENT = (httpx2.ConnectError, httpx2.ConnectTimeout)
 
 
 class AnthropicClient:
@@ -54,15 +59,22 @@ class AnthropicClient:
                     "format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)},
                 },
             )
-        except anthropic.APITimeoutError:
-            raise TransientLLMError("the model request timed out") from None
-        except anthropic.APIConnectionError:
-            raise TransientLLMError("could not connect to the model API") from None
+        except anthropic.APITimeoutError as error:
+            # The SDK raises these `from` the httpx2 error, which says whether the request was sent.
+            raise TransientLLMError(
+                "the model request timed out", usage_known=isinstance(error.__cause__, _NEVER_SENT)
+            ) from None
+        except anthropic.APIConnectionError as error:
+            raise TransientLLMError(
+                "could not connect to the model API", usage_known=isinstance(error.__cause__, _NEVER_SENT)
+            ) from None
         except anthropic.APIStatusError as error:
             # Built from the status only: error bodies and request headers stay out of messages.
             message = f"the model API returned HTTP {error.status_code}"
             if error.status_code in _TRANSIENT_STATUSES or error.status_code >= 500:
-                raise TransientLLMError(message) from None
+                raise TransientLLMError(
+                    message, usage_known=error.status_code not in _USAGE_UNKNOWN_STATUSES
+                ) from None
             raise PermanentLLMError(message) from None
 
         usage = Usage(

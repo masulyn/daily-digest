@@ -50,12 +50,25 @@ class LLMSettings(BaseModel):
     max_usd_per_run: Decimal = Field(gt=0)
     max_input_tokens: int = Field(gt=0)
     max_output_tokens: int = Field(gt=0)
+    max_run_input_tokens: int = Field(gt=0)
+    max_run_output_tokens: int = Field(gt=0)
     request_timeout_seconds: float = Field(gt=0)
 
     @model_validator(mode="after")
     def _model_has_a_price(self) -> "LLMSettings":
         if self.model not in self.prices:
             raise ValueError(f"no entry for model {self.model!r} in llm.prices")
+        return self
+
+    @model_validator(mode="after")
+    def _run_ceilings_allow_a_call(self) -> "LLMSettings":
+        # A run ceiling below the per-call one would block a call the per-call check allows.
+        for run_key, call_key in (
+            ("max_run_input_tokens", "max_input_tokens"),
+            ("max_run_output_tokens", "max_output_tokens"),
+        ):
+            if getattr(self, run_key) < getattr(self, call_key):
+                raise ValueError(f"llm.{run_key} must be at least llm.{call_key}")
         return self
 
 

@@ -64,24 +64,40 @@ class MeteredClient:
         self.input_tokens = 0
         self.output_tokens = 0
         self.spent = Decimal(0)
+        self.unknown_usage_attempts = 0
 
     def usage_line(self) -> str:
-        return (
+        line = (
             f"usage: {self.calls} call(s), {self.input_tokens:,} tokens in, "
             f"{self.output_tokens:,} out, {format_usd(self.spent)}"
         )
+        if self.unknown_usage_attempts:
+            line += (
+                f"; includes {self.unknown_usage_attempts} attempt(s) with unknown usage "
+                "counted at the worst-case estimate"
+            )
+        return line
 
     def complete(
         self, *, system: str, messages: list[dict], schema: type[T], max_tokens: int
     ) -> LLMResult[T]:
         for attempt in range(1, MAX_ATTEMPTS + 1):
-            self._check_budget(system, messages, schema, max_tokens, attempt)
+            estimated_in = self._check_budget(system, messages, schema, max_tokens, attempt)
             try:
                 result = self._inner.complete(
                     system=system, messages=messages, schema=schema, max_tokens=max_tokens
                 )
             except TransientLLMError as error:
-                self._record(error.usage, attempt, "transient_error")
+                if error.usage_known:
+                    self._record(error.usage, attempt, "transient_error")
+                else:
+                    # The attempt may have been billed; count the worst case so the cap holds.
+                    self.unknown_usage_attempts += 1
+                    self._record(
+                        Usage(input_tokens=estimated_in, output_tokens=max_tokens),
+                        attempt,
+                        "transient_error_usage_unknown",
+                    )
                 if attempt == MAX_ATTEMPTS:
                     raise
                 self._sleep(_BACKOFF_SECONDS[attempt - 1])
@@ -98,7 +114,8 @@ class MeteredClient:
 
     def _check_budget(
         self, system: str, messages: list[dict], schema: type[BaseModel], max_tokens: int, attempt: int
-    ) -> None:
+    ) -> int:
+        """Return the input estimate, or raise before any call that could cross a cap."""
         s = self._settings
         estimated_in = estimate_input_tokens(system, messages, schema)
         worst = self.spent + cost_usd(self._prices, estimated_in, max_tokens)
@@ -107,6 +124,16 @@ class MeteredClient:
             problem = f"about {estimated_in:,} input tokens exceeds the {s.max_input_tokens:,} ceiling"
         elif max_tokens > s.max_output_tokens:
             problem = f"{max_tokens:,} output tokens exceeds the {s.max_output_tokens:,} ceiling"
+        elif self.input_tokens + estimated_in > s.max_run_input_tokens:
+            problem = (
+                f"{self.input_tokens:,} input tokens used plus about {estimated_in:,} more "
+                f"would exceed the {s.max_run_input_tokens:,} run ceiling"
+            )
+        elif self.output_tokens + max_tokens > s.max_run_output_tokens:
+            problem = (
+                f"{self.output_tokens:,} output tokens used plus {max_tokens:,} more "
+                f"would exceed the {s.max_run_output_tokens:,} run ceiling"
+            )
         elif worst > s.max_usd_per_run:
             problem = (
                 f"estimated worst case {format_usd(worst)} would exceed the "
@@ -115,6 +142,7 @@ class MeteredClient:
         if problem:
             self._log(attempt, "blocked_by_budget", Usage(), Decimal(0))
             raise BudgetExceeded(f"budget exceeded, no model call made: {problem}")
+        return estimated_in
 
     def _record(self, usage: Usage, attempt: int, outcome: str) -> None:
         call_cost = cost_usd(self._prices, usage.input_tokens, usage.output_tokens)

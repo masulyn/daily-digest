@@ -7,6 +7,8 @@ model = "claude-sonnet-5-5"
 max_usd_per_run = 0.25
 max_input_tokens = 40000
 max_output_tokens = 6000
+max_run_input_tokens = 150000
+max_run_output_tokens = 20000
 request_timeout_seconds = 60
 
 [llm.prices.claude-sonnet-5-5]

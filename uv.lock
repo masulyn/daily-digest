@@ -223,6 +223,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "feedparser" },
     { name = "httpx" },
+    { name = "httpx2" },
     { name = "langgraph" },
     { name = "pydantic" },
     { name = "trafilatura" },
@@ -230,7 +231,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx2" },
     { name = "pytest" },
 ]
 
@@ -239,16 +239,14 @@ requires-dist = [
     { name = "anthropic", specifier = ">=1.15.0" },
     { name = "feedparser", specifier = ">=6.0.14" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "httpx2", specifier = ">=2.14.0" },
     { name = "langgraph", specifier = ">=1.2.16" },
     { name = "pydantic", specifier = ">=2.14.1" },
     { name = "trafilatura", specifier = ">=2.3.1" },
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "httpx2", specifier = ">=2.14.0" },
-    { name = "pytest", specifier = ">=9.1.1" },
-]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "dateparser"
