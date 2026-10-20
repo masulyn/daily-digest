@@ -65,7 +65,7 @@ def test_usage_line_totals_tokens_and_dollars():
 
 def test_worst_case_over_the_dollar_cap_blocks_the_call():
     client, inner, _ = metered(['{"word": "a"}'], settings=TIGHT)
-    # about 31k estimated input tokens plus 4k output is roughly $0.10 at the default prices
+    # about 35k estimated input tokens plus 4k output is just over $0.10 at the default prices
     with pytest.raises(BudgetExceeded, match="run cap"):
         ask(client, "x" * 93_000)
     assert inner.requests == []
@@ -300,3 +300,17 @@ def test_bad_settings_fail_naming_the_key(tmp_path, changes, key):
 def test_missing_settings_file_is_reported(tmp_path):
     with pytest.raises(SettingsError, match="not found"):
         load_llm_settings(tmp_path / "nope.toml")
+
+
+def test_the_input_estimate_adds_the_output_format_and_sits_just_above_one_measured_prompt():
+    import json
+    import math
+
+    from daily_digest.contracts import Draft
+    from daily_digest.llm.metered import estimate_input_tokens
+
+    text = "x" * 34_154  # the Oct 2026 digest prompt: system plus 20 items, 12,572 input tokens measured
+    schema_chars = len(json.dumps(Draft.model_json_schema()))
+    assert estimate_input_tokens("", [{"content": text}], Draft) == math.ceil((34_154 + schema_chars) / 2.7)
+    assert estimate_input_tokens("", [{"content": text}]) == math.ceil(34_154 / 2.7)
+    assert 12_572 <= estimate_input_tokens("", [{"content": text}], Draft) <= 12_572 * 1.15  # one data point

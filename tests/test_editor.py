@@ -655,3 +655,97 @@ def test_a_very_long_item_id_is_clipped_in_the_note():
     long_id = "z" * 5000
     notes = notes_for("factual", ids=(long_id,))
     assert len(notes) == 1 and len(notes[0]) < 600 and "z" * 201 not in notes[0]
+
+
+# --- punctuation, surnames, first-draft notes, prompt ----------------------------------
+
+GARTNER = SentItem(
+    title="Gartner questions AI data center returns",
+    body="Gartner analyst Will Sommer said, “Enterprise AI revenue will be insufficient to support returns,” "
+         "and added that data center revenue should reach no more than $3.6 trillion.",
+)
+
+
+def checked_notes(*sentences) -> list[str]:
+    draft = Draft(headline=HEADLINE, what_you_need_to_know=list(sentences), worth_a_closer_look=[filler(5, ("g",))])
+    return check_draft(draft, {"g": GARTNER}).notes
+
+
+def test_a_quote_is_matched_through_the_comma_or_full_stop_the_sentence_adds():
+    core = "Enterprise AI revenue will be insufficient to support returns"
+    for ending in (",", ".", ""):
+        said = core + ending
+        text = f"Will Sommer said, “{said}”"
+        assert checked_notes(sentence("quote", ids=("g",), text=text, quote=said, speaker="Will Sommer")) == []
+        assert checked_notes(sentence("factual", ids=("g",), text=text)) == []  # the generic quoted-passage check
+
+
+def test_a_question_mark_or_changed_words_still_fail():
+    core = "Enterprise AI revenue will be insufficient to support returns"
+    for altered in (core + "?", core.replace("insufficient", "sufficient"), core + "!"):
+        notes = checked_notes(sentence("quote", ids=("g",), text=f"Will Sommer said, “{altered}”", quote=altered, speaker="Will Sommer"))
+        assert len(notes) == 1 and "not in the cited item" in notes[0]
+
+
+def test_the_surname_alone_names_the_speaker_in_the_sentence():
+    ok = sentence("attributed_opinion", ids=("g",), text="Sommer added that revenue should reach no more than $3.6 trillion.", speaker="Will Sommer")
+    assert checked_notes(ok) == []
+    full = ok.model_copy(update={"text": "Will Sommer added that revenue should stay under $3.6 trillion."})
+    assert checked_notes(full) == []
+
+
+def test_a_different_surname_or_an_unnamed_speaker_still_fails():
+    wrong = sentence("attributed_opinion", ids=("g",), text="Smith added that revenue should reach $3.6 trillion.", speaker="Will Sommer")
+    assert "not named in the sentence" in checked_notes(wrong)[0]
+    unnamed = sentence("attributed_opinion", ids=("g",), text="The analyst added that revenue should reach $3.6 trillion.", speaker="Will Sommer")
+    assert "not named in the sentence" in checked_notes(unnamed)[0]
+    absent = sentence("attributed_opinion", ids=("g",), text="Park added that revenue should reach $3.6 trillion.", speaker="Lee Park")
+    assert "not named in the cited item" in checked_notes(absent)[0]  # the full name must still be in the source
+
+
+def test_a_retry_keeps_the_first_drafts_dropped_sentences_in_the_notes():
+    first = make_draft(150)  # too short: forces the retry
+    first.what_you_need_to_know.append(sentence("factual", ids=("nope",), text="An unsupported claim."))
+    client = MockClient([first, make_draft(250)])
+    _, notes = write_draft(items(), client)
+    assert len(client.requests) == 2
+    assert len(notes) == 1 and notes[0].startswith("first draft, dropped what_you_need_to_know sentence")
+    assert "An unsupported claim." in notes[0] and "not provided" in notes[0]
+
+
+def test_a_clean_first_draft_has_no_first_draft_notes():
+    assert write_draft(items(), MockClient([make_draft(250)]))[1] == []
+
+
+def test_only_the_writing_prompt_sets_a_word_target_but_both_ask_for_the_headline_count():
+    assert "aim for 250 to 400" in SYSTEM_PROMPT  # a revision must not be invited to add text
+    assert "aim for" not in REVISE_PROMPT
+    for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
+        assert "count them" in prompt
+
+
+def test_suffixes_and_long_organization_names_do_not_count_as_surnames():
+    from daily_digest.editor import _names_for
+
+    assert _names_for("Will Sommer") == ["Will Sommer", "Sommer"]
+    assert _names_for("Martin Luther King Jr.") == ["Martin Luther King Jr.", "King"]
+    assert _names_for("John Smith III") == ["John Smith III", "Smith"]
+    assert _names_for("Jr. Smith") == ["Jr. Smith"]  # one real token left
+    assert _names_for("Department of the Interior Office") == ["Department of the Interior Office"]
+    assert _names_for("Gartner") == ["Gartner"]
+    assert _names_for("Dr. J.") == ["Dr. J."]
+
+
+def test_an_ellipsis_in_a_quote_is_not_forgiven_but_three_dots_are_stripped_like_a_full_stop():
+    core = "Enterprise AI revenue will be insufficient to support returns"
+    for ending, ok in (("...", True), ("…", False)):
+        said = core + ending
+        notes = checked_notes(sentence("quote", ids=("g",), text=f"Will Sommer said, “{said}”", quote=said, speaker="Will Sommer"))
+        assert (notes == []) is ok
+
+
+def test_a_second_bad_draft_after_dropped_sentences_still_fails_clearly():
+    first = make_draft(150)
+    first.what_you_need_to_know.append(sentence("factual", ids=("nope",)))
+    with pytest.raises(WriterFailed, match="failed the checks twice"):
+        write_draft(items(), MockClient([first, make_draft(150)]))
