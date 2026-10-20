@@ -7,9 +7,7 @@
       "Bash(git diff *)",
       "Bash(git log *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
-    ],
-    "ask": [
+      "Bash(git commit *)",
       "Bash(git push *)",
       "Bash(gh pr create *)"
     ],
@@ -17,6 +15,9 @@
       "Bash(git push *--force*)",
       "Bash(git push -f *)",
       "Bash(git push * -f)",
+      "Bash(git push origin main)",
+      "Bash(git push origin main *)",
+      "Bash(git push origin HEAD:main*)",
       "Bash(gh pr merge *)",
       "Bash(gh pr review *)",
       "Read(./.env)"
