@@ -19,6 +19,7 @@ MAX_HEADLINE_WORDS = 12
 MIN_BODY_WORDS = 200
 MAX_BODY_WORDS = 500
 AIM_BODY_WORDS = "250 to 400"
+AIM_HEADLINE_WORDS = "8 to 10"  # the hard limit is 12; models miscount, so they are asked for margin
 MIN_QUOTE_CHARS = 15  # a shorter "quote" is a word or two that would pass the substring check anywhere
 MIN_SPEAKER_CHARS = 3
 MAX_NOTE_TEXT = 200  # enough for the author to judge a dropped sentence without flooding the terminal
@@ -61,8 +62,9 @@ other quotation marks around passages. The headline may use only facts stated in
 
 Style: neutral, concise, executive tone for a time-poor C-level reader. No hype, marketing \
 language, emoji, or unexplained acronyms. Short paragraphs. The two sections together are \
-{MIN_BODY_WORDS} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words: \
-count them.
+{MIN_BODY_WORDS} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words; \
+aim for {AIM_HEADLINE_WORDS} and write it about the single most important development, not \
+two stories joined with a semicolon.
 
 No opinion, prediction, advice, evaluation, or "so what" of your own. An implication for \
 adoption leaders may appear only if a source stated it, with attribution. Keep the source's \
@@ -75,7 +77,8 @@ Sentences: write each section as a list of sentences and give each one a type:
 - quote: a direct quote. Put the exact quoted string in `quote` (copied character for character \
 from the item, without surrounding quotation marks), put the speaker's name in `speaker`, and \
 include both in the sentence text. A quote sentence names its speaker itself: do not introduce it \
-with a separate sentence that attributes it. List the item.
+with a separate sentence that attributes it. Say in the sentence what the quote is about, so it \
+makes sense on its own, using only what the item says. List the item.
 - attributed_opinion: a view held by a named person or organization. Put the name in `speaker` \
 and in the sentence text. List the items. Use attributed_opinion only when the sentence text names \
 who holds the view. If a view has no named holder, state it as fact only if the item does; \
