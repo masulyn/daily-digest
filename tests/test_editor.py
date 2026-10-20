@@ -860,3 +860,10 @@ def test_retry_request_still_fits_the_ceiling_with_forty_items():
     assert len(inner.requests) == 2  # the first draft was too short, so a retry was made
     retry = inner.requests[1]
     assert estimate_input_tokens(retry["system"], retry["messages"], Draft) <= settings.max_input_tokens
+
+
+def test_a_prompt_that_cannot_keep_three_items_fails_clearly_instead_of_calling_the_model():
+    client = MockClient([make_draft(250)], max_input_tokens=7_000, max_output_tokens=6_000)  # budget: 1,000 tokens
+    with pytest.raises(WriterFailed, match="fewer than 3 items fit"):
+        write_draft(items(), client)
+    assert client.requests == []

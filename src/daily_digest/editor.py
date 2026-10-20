@@ -392,8 +392,7 @@ def fit_items(items: list[CandidateItem], client: BudgetedClient) -> tuple[list[
     """Shrink the prompt to the input ceiling: oldest items lose their full text, then are dropped.
 
     Room is kept for one retry, which resends the prompt plus the first reply. The list is newest
-    first and keeps its order; 'oldest' stands in for 'lowest ranked' until relevance scoring
-    (FR-3.4) exists.
+    first, the only ranking available, and keeps its order.
     """
     budget = client.max_input_tokens - client.max_output_tokens
 
@@ -421,6 +420,8 @@ def fit_items(items: list[CandidateItem], client: BudgetedClient) -> tuple[list[
 def write_draft(items: list[CandidateItem], client: BudgetedClient) -> tuple[Draft, list[str]]:
     """The draft and notes about dropped sentences. Needs at least MIN_ITEMS items."""
     items, fit_notes = fit_items(items, client)
+    if len(items) < MIN_ITEMS:
+        raise WriterFailed(f"fewer than {MIN_ITEMS} items fit within the input limit")
     prompt, sent = render_items(items)
     draft, notes = _generate(client, SYSTEM_PROMPT, [{"role": "user", "content": prompt}], sent)
     return draft, [*fit_notes, *notes]
@@ -434,6 +435,8 @@ def revise(
     Mechanical checks keep a revision from adding sentences or citing new items. They cannot tell
     whether rewording changed what a sentence claims; the Reviewer's entailment check does that.
     The 200 to 500 word rule applies here too, so removing too much fails the length check.
+    Pass the items `write_draft` sent: it may have shortened some, and quotes are checked against
+    the text the model was shown.
     """
     cited = list(dict.fromkeys(i for sentence in sentences(draft) for i in sentence.item_ids))
     by_id = {item.id: item for item in items}
