@@ -15,6 +15,7 @@ from daily_digest.editor import (
     EXCLUDE_TIER,
     HIGH_TIER,
     MEDIUM_TIER,
+    SentItem,
     REVISE_PROMPT,
     SYSTEM_PROMPT,
     WriterFailed,
@@ -228,6 +229,29 @@ def test_matches_must_start_and_end_on_word_boundaries():
     assert "not in the cited item" in notes_for("quote", **good_quote(quote=fragment, text=f"Dana Reyes said, “{fragment}”"))[0]
     lowercase = notes_for("attributed_opinion", ids=("a4",), text="the said customers asked for predictable costs.", speaker="the")
     assert "not a name" in lowercase[0]
+
+
+def test_signed_figures_keep_their_sign():
+    _, sent = render_items(items())
+    draft = Draft(
+        headline="-3% on the quarter",
+        what_you_need_to_know=[sentence("factual", ids=("a1",), text="-3% year on year, the report said.")],
+        worth_a_closer_look=[sentence("factual", ids=("a1",), text="+5% growth followed; #1 priority was cost.")],
+    )
+    kept = check_draft(draft, sent).draft
+    assert kept.headline == "-3% on the quarter"
+    assert kept.what_you_need_to_know[0].text == "-3% year on year, the report said."
+    assert kept.worth_a_closer_look[0].text == "+5% growth followed; #1 priority was cost."
+
+
+def test_a_capitalized_host_must_come_from_the_cited_item():
+    invented = notes_for("factual", text="Readers can visit Evil.com for details.")
+    assert len(invented) == 1 and "'Evil.com'" in invented[0]
+    sent = {"a1": SentItem(title="Deal", body="The firm, Character.AI, and Amazon.com both agreed.")}
+    draft = Draft(headline=HEADLINE, what_you_need_to_know=[sentence("factual", ids=("a1",), text="Character.AI and Amazon.com agreed.")],
+                  worth_a_closer_look=[filler(5, ("a1",))])
+    assert check_draft(draft, sent).notes == []
+    assert any("headline mentions 'Evil.com'" in p for p in check_draft(make_draft(220, "Visit Evil.com now"), render_items(items())[1]).problems)
 
 
 def test_leading_markdown_is_stripped_and_a_quoted_headline_is_a_problem():

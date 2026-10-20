@@ -102,15 +102,19 @@ revised draft.
 
 {_STYLE_RULES}"""
 
+_TLDS = "com|org|net|io|ai|gov|edu|co|dev|app|info|biz|ly"
 # Schemes and www. in any case; a lowercase host with a known ending; a dotted name that starts with
-# a letter followed by a path. Capitalized names (Character.AI, Amazon.com) and rates ($2.50/million) pass.
+# a letter followed by a path. Rates ($2.50/million) pass. Capitalized hosts (Amazon.com, Character.AI)
+# are real names as often as links, so they pass here and are checked against the cited text instead.
 _URL = re.compile(
     r"(?i:[a-z][a-z0-9+.-]*://|www\.|(?:mailto|javascript|data|file|ftp):)"
-    r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|ai|gov|edu|co|dev|app|info|biz|ly)\b"
+    rf"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:{_TLDS})\b"
     r"|(?i:\b[a-z][\w-]*(?:\.[a-z][\w-]*)+/)"
 )
+_HOST = re.compile(rf"(?i)\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:{_TLDS})\b")
 _MARKER = re.compile(r"\[\d+\]")
-_LEADING_MARKDOWN = re.compile(r"^(?:[#>*+\-\s]+|\d+[.)]\s+)+")
+# A heading, quote, bullet or list number only when followed by a space, so "-3%" and "+5%" keep their sign.
+_LEADING_MARKDOWN = re.compile(r"^(?:(?:#{1,6}|>|[-+*]|\d+[.)])\s+|\s+)+")
 # Double quotes, guillemets, and low-9 quotes; single curly quotes only when they cannot be an apostrophe.
 _QUOTED_SPAN = re.compile(r'“([^”]+)”|"([^"]+)"|«([^»]+)»|„([^“”]+)[“”]|(?<!\w)‘([^’]{15,})’(?!\w)')
 _CURLY = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
@@ -167,6 +171,14 @@ def render_items(items: list[CandidateItem]) -> tuple[str, dict[str, SentItem]]:
     return "\n\n".join(blocks), sent
 
 
+def _unsupported_host(text: str, sources: list[str]) -> str | None:
+    """A host-like name must appear in the cited text; otherwise it could be a link the model made up."""
+    for match in _HOST.finditer(unicodedata.normalize("NFKC", text)):
+        if not any(_contains(source, match.group()) for source in sources):
+            return match.group()
+    return None
+
+
 def _quoted_passages(text: str) -> list[str]:
     spans = (normalize(next(g for g in match.groups() if g)) for match in _QUOTED_SPAN.finditer(text))
     return [span for span in spans if len(span) >= MIN_QUOTE_CHARS]
@@ -187,6 +199,8 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> str
     bodies = [normalize(item.body) for item in cited]
     named_in = [normalize(f"{item.title} {item.body}") for item in cited]
     normalized_text = normalize(text)
+    if host := _unsupported_host(text, named_in):
+        return f"mentions {host!r}, which is not in the cited items"
 
     if sentence.type == "quote":
         quote = normalize(sentence.quote or "")
@@ -262,6 +276,8 @@ def check_draft(
     headline = _plain(draft.headline)
     if has_url(headline) or _MARKER.search(headline):
         problems.append("the headline contains a URL or a citation marker")
+    if host := _unsupported_host(headline, [normalize(f"{i.title} {i.body}") for i in sent.values()]):
+        problems.append(f"the headline mentions {host!r}, which is not in the items")
     if _quoted_passages(headline):
         problems.append("the headline contains a quotation; quotes belong in the sections")
     if len(headline.split()) > MAX_HEADLINE_WORDS:
