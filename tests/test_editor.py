@@ -20,6 +20,7 @@ from daily_digest.editor import (
     SYSTEM_PROMPT,
     WriterFailed,
     check_draft,
+    fit_items,
     has_url,
     normalize,
     render_items,
@@ -28,6 +29,7 @@ from daily_digest.editor import (
 )
 from daily_digest.graph import run_digest
 from daily_digest.llm import MockClient
+from daily_digest.llm.metered import MeteredClient, estimate_input_tokens
 from daily_digest.llm.anthropic_client import AnthropicClient
 from daily_digest.store import Store
 from draft_helpers import HEADLINE, QUOTE, filler, make_draft, sentence
@@ -796,3 +798,78 @@ def test_the_prompts_ban_quote_lead_in_sentences_and_added_hedges():
     for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
         assert "do not introduce it with a separate sentence that attributes it" in prompt
         assert "do not add hedges the source does not use" in prompt
+
+
+# --- fitting the prompt to the input ceiling -------------------------------------------
+
+def _long_items(count: int):
+    """The 8 fixture items (so canned drafts can cite them) plus filler items, all with 3,000-char article text."""
+    real = items()
+    pad = "Full text sentence. " * 200
+    out = []
+    for n in range(count):
+        base = real[n] if n < len(real) else real[0].model_copy(
+            update={"id": f"n{n}", "canonical_url": f"https://news.example.com/n{n}", "content_hash": f"h{n}"}
+        )
+        out.append(base.model_copy(update={"article_text": (base.extract + " " + pad)[:3000]}))
+    return out
+
+
+def _estimate(batch):
+    prompt, _ = render_items(batch)
+    return estimate_input_tokens(SYSTEM_PROMPT, [{"content": prompt}], Draft)
+
+
+def test_forty_full_text_items_are_fitted_and_sent_without_budget_error():
+    batch = _long_items(40)
+    settings = load_llm_settings()
+    assert _estimate(batch) > settings.max_input_tokens  # would have failed before the fit step
+    inner = MockClient([make_draft(250)])
+    write_draft(batch, MeteredClient(inner, settings))
+    request = inner.requests[0]
+    assert estimate_input_tokens(request["system"], request["messages"], Draft) <= (
+        settings.max_input_tokens - settings.max_output_tokens
+    )
+
+
+def test_oldest_items_lose_full_text_first_and_order_is_kept():
+    batch = _long_items(40)
+    fitted, notes = fit_items(batch, MockClient([]))
+    assert [i.id for i in fitted] == [i.id for i in batch]
+    has_full = [bool(i.article_text) for i in fitted]
+    assert has_full[0] and not has_full[-1]
+    assert has_full == sorted(has_full, reverse=True)  # full text first, then extracts
+    assert len(notes) == 1 and "older item(s) as short extracts" in notes[0]
+
+
+def test_items_are_dropped_from_the_end_when_extracts_do_not_fit():
+    batch = _long_items(10)
+    client = MockClient([], max_input_tokens=2500, max_output_tokens=500)
+    fitted, notes = fit_items(batch, client)
+    assert 0 < len(fitted) < 10
+    assert [i.id for i in fitted] == [i.id for i in batch][: len(fitted)]
+    assert any(n.startswith("left out") for n in notes)
+    assert _estimate(fitted) <= 2000
+
+
+def test_a_day_that_fits_gets_no_notes_and_the_same_prompt():
+    batch = items()
+    fitted, notes = fit_items(batch, MockClient([]))
+    assert notes == [] and fitted == batch
+    assert render_items(fitted) == render_items(batch)
+
+
+def test_retry_request_still_fits_the_ceiling_with_forty_items():
+    settings = load_llm_settings()
+    inner = MockClient([make_draft(50), make_draft(250)])
+    write_draft(_long_items(40), MeteredClient(inner, settings))
+    assert len(inner.requests) == 2  # the first draft was too short, so a retry was made
+    retry = inner.requests[1]
+    assert estimate_input_tokens(retry["system"], retry["messages"], Draft) <= settings.max_input_tokens
+
+
+def test_a_prompt_that_cannot_keep_three_items_fails_clearly_instead_of_calling_the_model():
+    client = MockClient([make_draft(250)], max_input_tokens=7_000, max_output_tokens=6_000)  # budget: 1,000 tokens
+    with pytest.raises(WriterFailed, match="fewer than 3 items fit"):
+        write_draft(items(), client)
+    assert client.requests == []

@@ -6,7 +6,7 @@ import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -24,7 +24,7 @@ from .digest import render_markdown
 from .editor import WriterFailed
 from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
-from .graph import run_digest
+from .graph import day_window, run_digest
 from .ingest import ingest
 from .llm import LLMClient, LLMError, MeteredClient
 from .robots import RobotsChecker
@@ -62,16 +62,37 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
     return 0 if any(r.error is None for r in reports) else 1
 
 
-def run_extract(db_path: Path, limit: int | None) -> int:
+DEFAULT_EXTRACT_DAYS = 2  # a digest covers one day, so older pages are never read
+
+
+def extract_since(today: date, days: int) -> datetime:
+    """Local midnight at the start of the day `days - 1` days before `today`."""
+    return day_window(today - timedelta(days=days - 1))[0]
+
+
+def _positive_int(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: {text!r}") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
+def run_extract(db_path: Path, limit: int | None, days: int = DEFAULT_EXTRACT_DAYS) -> int:
     _warn_if_no_contact()
     store = _open_existing(db_path)
     if store is None:
         return 2
+    since = extract_since(date.today(), days)
     with store, HttpFetcher() as fetcher:
         robots = RobotsChecker(fetcher.fetch, user_agent())
         report = extract_articles(
-            store, fetcher.fetch, robots, set_host_delay=fetcher.set_host_delay, limit=limit
+            store, fetcher.fetch, robots, set_host_delay=fetcher.set_host_delay, limit=limit,
+            since=since,
         )
+    print(f"Window: items published since {since.date().isoformat()} (--days {days}).")
     print(f"Considered {report.considered}, extracted {report.extracted}, deferred {report.deferred}.")
     for code, n in sorted(report.failures.items()):
         print(f"  {code}: {n}")
@@ -179,6 +200,10 @@ def main() -> None:
     e = sub.add_parser("extract", help="fetch full article text for items whose feed text is too short")
     e.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     e.add_argument("--limit", type=int, default=None, help="maximum number of articles to fetch")
+    e.add_argument(
+        "--days", type=_positive_int, default=DEFAULT_EXTRACT_DAYS,
+        help="only fetch items published in the last N days (default 2: yesterday and today)",
+    )
     d = sub.add_parser("draft", help="write the digest from one day's stored items with one model call (no fetching)")
     d.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     d.add_argument(
@@ -198,6 +223,6 @@ def main() -> None:
         with _debug_logging(args.debug):
             raise SystemExit(run_draft(args.db or data_dir() / "digest.db", target, client))
     if args.command == "extract":
-        raise SystemExit(run_extract(args.db or data_dir() / "digest.db", args.limit))
+        raise SystemExit(run_extract(args.db or data_dir() / "digest.db", args.limit, args.days))
     if args.command == "ingest":
         raise SystemExit(run_ingest(args.db or data_dir() / "digest.db", args.feeds))

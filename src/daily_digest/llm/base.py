@@ -72,4 +72,5 @@ class LLMClient(Protocol):
 class BudgetedClient(LLMClient, Protocol):
     """A client that also says how large a reply the caller may ask for."""
 
+    max_input_tokens: int
     max_output_tokens: int
