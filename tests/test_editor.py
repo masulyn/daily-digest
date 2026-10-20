@@ -727,7 +727,7 @@ def test_only_the_writing_prompt_sets_a_body_target_but_both_aim_the_headline_be
 
 def test_the_prompts_ask_a_quote_sentence_to_say_what_the_quote_is_about():
     for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
-        assert "what the quote is about, so it makes sense on its own" in prompt
+        assert "what the quote is about, so it makes sense on its own, using only what the item says" in prompt
 
 
 def test_suffixes_and_long_organization_names_do_not_count_as_surnames():

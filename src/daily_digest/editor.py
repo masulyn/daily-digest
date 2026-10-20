@@ -77,7 +77,7 @@ Sentences: write each section as a list of sentences and give each one a type:
 from the item, without surrounding quotation marks), put the speaker's name in `speaker`, and \
 include both in the sentence text. A quote sentence names its speaker itself: do not introduce it \
 with a separate sentence that attributes it. Say in the sentence what the quote is about, so it \
-makes sense on its own. List the item.
+makes sense on its own, using only what the item says. List the item.
 - attributed_opinion: a view held by a named person or organization. Put the name in `speaker` \
 and in the sentence text. List the items. Use attributed_opinion only when the sentence text names \
 who holds the view. If a view has no named holder, state it as fact only if the item does; \
