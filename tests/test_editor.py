@@ -749,3 +749,35 @@ def test_a_second_bad_draft_after_dropped_sentences_still_fails_clearly():
     first.what_you_need_to_know.append(sentence("factual", ids=("nope",)))
     with pytest.raises(WriterFailed, match="failed the checks twice"):
         write_draft(items(), MockClient([first, make_draft(150)]))
+
+
+# --- publisher names, quote lead-ins, added hedges -------------------------------------
+
+def test_a_publishers_name_is_not_mistaken_for_an_invented_link():
+    sent = {"p": SentItem(title="Capex warning", body="Gartner expects spending to outpace revenue.", source="CIO.com AI")}
+    ok = Draft(headline=HEADLINE, what_you_need_to_know=[sentence("factual", ids=("p",), text="CIO.com reported that Gartner expects spending to outpace revenue.")],
+               worth_a_closer_look=[filler(5, ("p",))])
+    assert check_draft(ok, sent).notes == []
+    invented = ok.model_copy(update={"what_you_need_to_know": [sentence("factual", ids=("p",), text="Evil.com reported that Gartner expects spending to outpace revenue.")]})
+    assert "host name" in check_draft(invented, sent).notes[0]
+    elsewhere = ok.model_copy(update={"what_you_need_to_know": [sentence("factual", ids=("p",), text="Computerworld.com reported on Gartner.")]})
+    assert "host name" in check_draft(elsewhere, sent).notes[0]  # only the cited item's own publisher counts
+
+
+def test_the_rendered_items_carry_their_source_for_the_host_check():
+    _, sent = render_items(editor_items(DAY, "a1"))
+    assert sent["a1"].source == "Example Wire"
+
+
+def test_the_source_name_does_not_make_a_publisher_a_valid_speaker():
+    sent = {"p": SentItem(title="Capex warning", body="Gartner expects spending to outpace revenue.", source="Example Wire")}
+    draft = Draft(headline=HEADLINE,
+                  what_you_need_to_know=[sentence("attributed_opinion", ids=("p",), text="Example Wire expects spending to outpace revenue.", speaker="Example Wire")],
+                  worth_a_closer_look=[filler(5, ("p",))])
+    assert "speaker is not named in the cited item" in check_draft(draft, sent).notes[0]
+
+
+def test_the_prompts_ban_quote_lead_in_sentences_and_added_hedges():
+    for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
+        assert "do not introduce it with a separate sentence" in prompt
+        assert "do not add hedges the source does not use" in prompt
