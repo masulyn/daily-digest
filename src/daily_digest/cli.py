@@ -44,7 +44,7 @@ def _open_existing(db_path: Path) -> Store | None:
     try:
         return Store(db_path, must_exist=True)
     except DatabaseNotFound as error:
-        print(error, file=sys.stderr)
+        print(_printable(str(error)), file=sys.stderr)
         return None
 
 
@@ -56,7 +56,7 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
         reports = ingest(sources, fetcher.fetch, robots, store)
         print(f"{'source':34} {'entries':>7} {'stored':>6} {'dupes':>5} {'skipped':>7}  error")
         for r in reports:
-            print(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7}  {r.error or ''}")
+            print(_printable(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7}  {r.error or ''}"))
         print(f"\nItems in database: {store.count()}  ({db_path})")
     # Partial failures are reported in the table; only fail when nothing was ingested.
     return 0 if any(r.error is None for r in reports) else 1
@@ -74,7 +74,7 @@ def run_extract(db_path: Path, limit: int | None) -> int:
         )
     print(f"Considered {report.considered}, extracted {report.extracted}, deferred {report.deferred}.")
     for code, n in sorted(report.failures.items()):
-        print(f"  {code}: {n}")
+        print(_printable(f"  {code}: {n}"))
     # Like ingest: fail only when articles were attempted and none came back.
     return 1 if report.considered and not report.extracted else 0
 
@@ -95,7 +95,7 @@ def _build_client(settings_path: Path) -> MeteredClient | None:
     try:
         settings = load_llm_settings(settings_path)
     except SettingsError as error:
-        print(f"error: {error}", file=sys.stderr)
+        print(_printable(f"error: {error}"), file=sys.stderr)
         return None
     if settings.provider != "anthropic":
         print(f"error: provider {settings.provider!r} is only for tests; use --stub", file=sys.stderr)
@@ -135,12 +135,19 @@ def _print_draft(db_path: Path, target: date, client: MeteredClient | None) -> i
         item = by_id[summary.item_id]
         print(_printable(f"{item.title} ({item.source})"))
         print("\n".join(f"- {_printable(point)}" for point in summary.key_points))
-        print(f"  {summary.source_url}")
+        print(_printable(f"  {summary.source_url}"))
     if state.digest:
         print(_printable(render_markdown(state.digest)))
     for note in state.notes:
         print(_printable(note))
     return 0
+
+
+class _PrintableFormatter(logging.Formatter):
+    """Log lines can carry feed or model text, so they get the same cleaning as printed output."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _printable(super().format(record))
 
 
 @contextmanager
@@ -151,7 +158,7 @@ def _debug_logging(enabled: bool) -> Iterator[None]:
         return
     logger = logging.getLogger("daily_digest")
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+    handler.setFormatter(_PrintableFormatter("%(levelname)s %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
