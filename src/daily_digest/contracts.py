@@ -2,9 +2,9 @@
 
 from datetime import date
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field
 
 
 class ErrorCode(StrEnum):
@@ -91,7 +91,9 @@ class ReviewIssue(BaseModel):
     index: int | None = None  # sentence position within the section, counted from 0; absent for the headline
     severity: Severity
     category: IssueCategory
-    required_change: str = Field(min_length=1, max_length=300)
+    required_change: Annotated[str, BeforeValidator(lambda v: v.strip()[:300] if isinstance(v, str) else v)] = Field(
+        min_length=1, max_length=300
+    )  # the API cannot enforce a length, so an over-long reply is clipped rather than failing it
 
 
 class ReviewResult(BaseModel):

@@ -566,7 +566,7 @@ def test_debug_run_logs_each_call_and_leaks_nothing(db, monkeypatch, capfd):
     assert slept == [1.0]  # the retry backed off without really sleeping
     assert captured.err.count("llm call") == 3  # the 429, the draft, the review
     assert "outcome=transient_error" in captured.err and "outcome=ok" in captured.err
-    assert "review round 1 mechanical=0 model=0 blocking=0 verdict=approve" in captured.err
+    assert "review round 1 mechanical=0 model=0 blocking=0 status=approved" in captured.err
     assert FAKE_KEY not in captured.out and FAKE_KEY not in captured.err
     assert "alpha alpha" not in captured.err  # no request or response bodies in the log
     assert "ANTHROPIC_LOG" not in os.environ

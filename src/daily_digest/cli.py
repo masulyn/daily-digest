@@ -20,8 +20,8 @@ from .config import (
     load_llm_settings,
     load_sources,
 )
-from .digest import render_markdown
 from .contracts import ReviewSummary
+from .digest import render_markdown
 from .editor import WriterFailed
 from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
@@ -235,7 +235,7 @@ def main() -> None:
         "--days", type=_positive_int, default=DEFAULT_EXTRACT_DAYS,
         help="only fetch items published in the last N days (default 2: yesterday and today)",
     )
-    d = sub.add_parser("draft", help="write the digest from one day's stored items with one model call (no fetching)")
+    d = sub.add_parser("draft", help="write and review the digest from one day's stored items (no fetching)")
     d.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     d.add_argument(
         "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",

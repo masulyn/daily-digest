@@ -8,7 +8,7 @@ Turns RSS items into a cited digest. See `docs/PRD.md` (what and why) and `docs/
 uv run daily-digest ingest                    # read the feeds into the local database
 uv run daily-digest extract                   # fetch full text for items whose feed text is short, teaser-like or cut at the extract limit (--days N: how far back, default 2)
 uv run daily-digest draft --stub              # offline placeholder summaries; no key needed
-uv run daily-digest draft [--date YYYY-MM-DD] # one model call picks the day's items and writes the digest as Markdown
+uv run daily-digest draft [--date YYYY-MM-DD] # writes the day's digest as Markdown, then a Reviewer checks it (at least two model calls)
 uv run daily-digest draft --debug             # also log every model call and review round (counts and dollars, never text or keys) to stderr
 uv run daily-digest draft --no-review        # skip the Reviewer: cheaper, but the digest is marked NOT REVIEWED and the exit code is 3
 ```
@@ -45,7 +45,7 @@ Exit codes: `0` a reviewed digest (approved, not converged or degraded) or nothi
 
 ## Model access and cost
 
-`draft` without `--stub` calls the Anthropic API once per run. Model, prices, and caps live in `config/settings.toml`. The default hard cap is **$0.25 per run** (one call is typically 2 to 4 cents; a retry after a failed check can double it). Before each call the app estimates the worst case (about 2.7 characters per token plus the output format, calibrated on one real digest, which errs a little high for English but can undercount other text) and makes no call if the estimate would cross the cap; the real cost is computed from the usage the API returns. If an attempt times out or the connection drops after the request was sent, it may still have been billed, so the usage line counts it at the worst-case estimate and says so; the Console usage page is the source of truth for actual spend. A timed-out attempt reserves a full output allowance (6,000 tokens), so a second timeout usually ends the run because the next attempt would cross the $0.25 cap. Prices in the file are third-party-reported; check them against the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
+`draft` without `--stub` calls the Anthropic API at least twice per run (the draft, then a review; each fix adds a revision call and another review). Model, prices, and caps live in `config/settings.toml`. The default hard cap is **$0.25 per run** (one call is typically 2 to 4 cents; a retry after a failed check can double it). Before each call the app estimates the worst case (about 2.7 characters per token plus the output format, calibrated on one real digest, which errs a little high for English but can undercount other text) and makes no call if the estimate would cross the cap; the real cost is computed from the usage the API returns. If an attempt times out or the connection drops after the request was sent, it may still have been billed, so the usage line counts it at the worst-case estimate and says so; the Console usage page is the source of truth for actual spend. A timed-out attempt reserves a full output allowance (6,000 tokens), so a second timeout usually ends the run because the next attempt would cross the $0.25 cap. Prices in the file are third-party-reported; check them against the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing).
 
 ### 1. Create a key
 

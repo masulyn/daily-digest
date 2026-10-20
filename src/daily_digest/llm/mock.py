@@ -23,11 +23,10 @@ class MockClient:
         self.max_output_tokens = max_output_tokens
         self.max_review_rounds = max_review_rounds
         self.spent = Decimal(0)
-        self._degraded = False
         self.requests: list[dict] = []
 
     def degraded(self) -> bool:
-        return self._degraded
+        return False  # the mock spends nothing; use MeteredClient to test the budget
 
     def complete(
         self, *, system: str, messages: list[dict], schema: type[T], max_tokens: int

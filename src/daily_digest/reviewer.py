@@ -76,7 +76,7 @@ Rules for the issues you report:
 - blocking: the sentence cannot be published as written. advisory: a small improvement.
 - required_change asks only for a reword or a removal, in at most 300 characters. Never ask for \
 new content, a new claim or a new source. Never write a URL.
-- Report only real problems. If the draft is sound, return no issues.
+- Report at most 20 issues, blocking first, and only real problems. If the draft is sound, return no issues.
 Set verdict to "approve" only if you list no blocking issue.
 """
 
@@ -184,31 +184,50 @@ def review_draft(
         if reason:
             notes.append(f"dropped a reviewer issue: it {reason}")
         else:
-            kept.append(issue.model_copy(update={"index": None}) if issue.section == "headline" else issue)
+            fixed = {"required_change": _one_line(issue.required_change)}
+            if issue.section == "headline":
+                fixed["index"] = None
+            kept.append(issue.model_copy(update=fixed))
     kept.sort(key=lambda i: i.severity != "blocking")  # blocking first, original order kept within each
     if len(kept) > MAX_ISSUES:
         notes.append(f"kept the first {MAX_ISSUES} of {len(kept)} reviewer issues")
     return kept[:MAX_ISSUES], notes
 
 
+def _one_line(text: str) -> str:
+    """Model text goes into printed bullets, so it must not be able to start a line of its own."""
+    return " ".join(text.split())
+
+
 def _issue_text(draft: Draft, issue: ReviewIssue) -> str:
+    change = _one_line(issue.required_change)
     if issue.section == "headline" or issue.index is None:
-        return f"headline ({issue.category}): {issue.required_change}"
+        return f"headline ({issue.category}): {change}"
     sentence: DraftSentence = getattr(draft, issue.section)[issue.index]
-    return f'{issue.section} sentence {issue.index + 1} ({issue.category}): "{clip(sentence.text)}" - {issue.required_change}'
+    shown = clip(_one_line(sentence.text))
+    return f'{issue.section} sentence {issue.index + 1} ({issue.category}): "{shown}" - {change}'
 
 
 def _prune(draft: Draft, issues: list[ReviewIssue]) -> tuple[Draft, int]:
     """The draft without the sentences that carry a blocking issue, and how many that was.
 
-    Removing a claim is always acceptable.
+    Removing a claim is always acceptable. If the removed sentence opened a paragraph, the next one
+    opens it instead, so the neighbours do not merge into the paragraph above.
     """
     drop = {(i.section, i.index) for i in issues if i.severity == "blocking" and i.index is not None}
-    kept = {
-        section: [s for index, s in enumerate(getattr(draft, section)) if (section, index) not in drop]
-        for section in SECTIONS
-    }
-    removed = sum(len(getattr(draft, section)) - len(kept[section]) for section in SECTIONS)
+    kept: dict[str, list[DraftSentence]] = {}
+    removed = 0
+    for section in SECTIONS:
+        kept[section], opener_lost = [], False
+        for index, sentence in enumerate(getattr(draft, section)):
+            if (section, index) in drop:
+                removed += 1
+                opener_lost = opener_lost or sentence.starts_paragraph
+            else:
+                if opener_lost:
+                    sentence = sentence.model_copy(update={"starts_paragraph": True})
+                kept[section].append(sentence)
+                opener_lost = False
     return Draft(headline=draft.headline, **kept), removed
 
 
@@ -265,9 +284,9 @@ def run_review(
         blocking = [i for i in issues if i.severity == "blocking"]
         reviewed = (current, issues)
         log.debug(
-            "review round %d mechanical=%d model=%d blocking=%d verdict=%s cumulative_usd=%s",
+            "review round %d mechanical=%d model=%d blocking=%d status=%s cumulative_usd=%s",
             round_no, len(mechanical), len(model_issues), len(blocking),
-            "revise" if blocking else "approve", format_usd(client.spent),
+            "revise" if blocking else "approved", format_usd(client.spent),
         )
         if not blocking:
             advisory = [_issue_text(current, i) for i in issues]
