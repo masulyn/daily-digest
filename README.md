@@ -66,3 +66,15 @@ ANTHROPIC_API_KEY=$(security find-generic-password -a "$USER" -s daily-digest-an
 To remove it: `security delete-generic-password -a "$USER" -s daily-digest-anthropic`.
 
 Without a key, `draft` exits with a one-line error; `draft --stub` needs none.
+
+## Secret scanning
+
+CI runs [Gitleaks](https://github.com/gitleaks/gitleaks) v8.30.1 on the commits of every push and pull request and fails the build on a finding. The release binary is downloaded in the job and checked against a pinned sha256 and the release's published checksums. The job has read-only permissions, and CI uses no secrets or tokens at all (the tests use the mock LLM provider).
+
+To scan locally on macOS, get v8.30.1 from the [releases page](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1) (the `gitleaks_8.30.1_darwin_arm64.tar.gz` or `darwin_x64` archive; `brew install gitleaks` also works but may be newer), then scan the whole history of every branch from the repo root:
+
+```
+gitleaks git --log-opts="--all" --redact .
+```
+
+`--redact` keeps any secret out of the output. The exit code is 1 when something is found and 0 when clean. To scan only what your branch adds, use `--log-opts="origin/main..HEAD"`.

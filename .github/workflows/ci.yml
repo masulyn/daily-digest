@@ -24,3 +24,55 @@ jobs:
       # CI never gets an API key and never calls a paid model.
       - name: Run tests
         run: uv run pytest
+
+  # Scans only the commits of this push or PR. Needs no secrets or tokens.
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      # sha256 of gitleaks_8.30.1_linux_x64.tar.gz, from the release's checksums file.
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      # Full history so the commit range below can always be resolved.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The pinned release binary avoids a third-party action and its license key.
+      - name: Install gitleaks
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$tarball" "$base/$tarball"
+          curl -sSfL -o "$RUNNER_TEMP/checksums.txt" "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          # Must match both the checksums file and the hash pinned above.
+          (cd "$RUNNER_TEMP" && grep " $tarball\$" checksums.txt | sha256sum -c -)
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan commits
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..$PUSH_AFTER"
+          elif main=$(git rev-parse -q --verify origin/main) && [ "$main" != "$PUSH_AFTER" ]; then
+            # New branch, or a force push that dropped the old tip: scan what main lacks.
+            # When the tip is main itself, fall through to scanning its whole history.
+            range="origin/main..$PUSH_AFTER"
+          else
+            range="$PUSH_AFTER"
+          fi
+          if [ "$(git rev-list --count "$range")" = "0" ]; then
+            echo "No commits in $range; nothing to scan."
+            exit 0
+          fi
+          "$RUNNER_TEMP/gitleaks" git --log-opts="$range" --redact --no-banner .
