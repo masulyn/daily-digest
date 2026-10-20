@@ -16,6 +16,10 @@ from .base import (
 # Pinned in code so an environment variable cannot send the key to another host.
 API_BASE_URL = "https://api.anthropic.com"
 _TRANSIENT_STATUSES = {408, 409, 429}
+# The docs (errors page, checked Oct 20, 2026) do not say which error responses are billed. A
+# 408 or 504 means the request timed out mid-processing, so it may have been; the rest are
+# rejections or capacity errors that did no model work.
+_USAGE_UNKNOWN_STATUSES = {408, 504}
 
 
 class AnthropicClient:
@@ -55,14 +59,16 @@ class AnthropicClient:
                 },
             )
         except anthropic.APITimeoutError:
-            raise TransientLLMError("the model request timed out") from None
+            raise TransientLLMError("the model request timed out", usage_known=False) from None
         except anthropic.APIConnectionError:
-            raise TransientLLMError("could not connect to the model API") from None
+            raise TransientLLMError("could not connect to the model API", usage_known=False) from None
         except anthropic.APIStatusError as error:
             # Built from the status only: error bodies and request headers stay out of messages.
             message = f"the model API returned HTTP {error.status_code}"
             if error.status_code in _TRANSIENT_STATUSES or error.status_code >= 500:
-                raise TransientLLMError(message) from None
+                raise TransientLLMError(
+                    message, usage_known=error.status_code not in _USAGE_UNKNOWN_STATUSES
+                ) from None
             raise PermanentLLMError(message) from None
 
         usage = Usage(

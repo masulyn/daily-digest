@@ -21,7 +21,7 @@ from daily_digest.llm import (
     Usage,
 )
 from daily_digest.llm.anthropic_client import API_BASE_URL, AnthropicClient
-from daily_digest.llm.metered import cost_usd
+from daily_digest.llm.metered import cost_usd, estimate_input_tokens
 
 SETTINGS = load_llm_settings()
 TIGHT = SETTINGS.model_copy(update={"max_usd_per_run": Decimal("0.10")})  # small enough for one call to reach
@@ -89,6 +89,69 @@ def test_retries_count_toward_the_cap():
         ask(client)
     assert len(inner.requests) == 1
     assert client.spent == Decimal("0.05")
+
+
+def test_retry_that_would_cross_the_run_input_ceiling_is_blocked():
+    estimate = estimate_input_tokens("sys", [{"role": "user", "content": "hi"}], Answer)
+    tight = SETTINGS.model_copy(update={"max_run_input_tokens": 1_000 + estimate - 1})
+    failure = TransientLLMError("boom", Usage(input_tokens=1_000, output_tokens=10))
+    client, inner, _ = metered([failure, '{"word": "a"}'], settings=tight)
+    with pytest.raises(BudgetExceeded, match="run ceiling"):
+        ask(client)
+    assert len(inner.requests) == 1
+
+
+def test_retry_that_would_cross_the_run_output_ceiling_is_blocked(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest.llm")
+    tight = SETTINGS.model_copy(update={"max_run_output_tokens": 4_000 + 500 - 1})
+    failure = TransientLLMError("boom", Usage(input_tokens=10, output_tokens=500))
+    client, inner, _ = metered([failure, '{"word": "a"}'], settings=tight)
+    with pytest.raises(BudgetExceeded, match="output tokens.*run ceiling"):
+        ask(client)
+    assert len(inner.requests) == 1
+    assert "outcome=blocked_by_budget" in caplog.records[-1].getMessage()
+
+
+def test_a_retry_within_the_run_ceilings_goes_ahead():
+    failure = TransientLLMError("boom", Usage(input_tokens=1_000, output_tokens=10))
+    client, _, _ = metered([failure, '{"word": "a"}'])
+    assert ask(client).parsed.word == "a"
+
+
+# --- attempts with unknown usage ---------------------------------------------------------
+
+def test_timeout_then_success_counts_the_worst_case_for_the_timeout(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest.llm")
+    estimate = estimate_input_tokens("sys", [{"role": "user", "content": "hi"}], Answer)
+    unknown = TransientLLMError("timed out", usage_known=False)
+    client, _, _ = metered([unknown, '{"word": "a"}'], usage=Usage(input_tokens=100, output_tokens=50))
+    ask(client)
+    assert client.calls == 2
+    assert client.input_tokens == estimate + 100 and client.output_tokens == 4_000 + 50
+    assert client.spent == cost_usd(SETTINGS.prices["claude-sonnet-5-5"], estimate + 100, 4_050)
+    assert client.usage_line().endswith(
+        "; includes 1 attempt(s) with unknown usage counted at the worst-case estimate")
+    first = caplog.records[0].getMessage()
+    assert "attempt=1 outcome=transient_error_usage_unknown" in first
+    assert f"input_tokens={estimate} output_tokens=4000" in first
+
+
+def test_status_error_then_success_adds_nothing_for_the_failed_attempt():
+    client, _, _ = metered([TransientLLMError("429"), '{"word": "a"}'], usage=Usage(input_tokens=100, output_tokens=50))
+    ask(client)
+    assert (client.input_tokens, client.output_tokens) == (100, 50)
+    assert client.spent == cost_usd(SETTINGS.prices["claude-sonnet-5-5"], 100, 50)
+    assert "unknown usage" not in client.usage_line()
+
+
+def test_an_unknown_usage_attempt_can_push_a_later_attempt_over_the_dollar_cap():
+    # one worst-case attempt is about $0.04; a $0.05 cap leaves no room for a second
+    tight = SETTINGS.model_copy(update={"max_usd_per_run": Decimal("0.05")})
+    client, inner, _ = metered([TransientLLMError("timed out", usage_known=False), '{"word": "a"}'], settings=tight)
+    with pytest.raises(BudgetExceeded, match="run cap"):
+        ask(client)
+    assert len(inner.requests) == 1
+    assert client.spent > Decimal("0.04")
 
 
 # --- retries and logging ---------------------------------------------------------------
@@ -195,6 +258,16 @@ def test_permanent_http_errors_are_permanent(status):
     assert len(seen) == 1
 
 
+@pytest.mark.parametrize(
+    ("status", "usage_known"), [(409, True), (429, True), (500, True), (529, True), (408, False), (504, False)]
+)
+def test_adapter_marks_only_possibly_billed_statuses_as_unknown_usage(status, usage_known):
+    client, _ = adapter(lambda r: httpx2.Response(status, json={"type": "error", "error": {"type": "x", "message": "m"}}))
+    with pytest.raises(TransientLLMError) as caught:
+        ask(client)
+    assert caught.value.usage_known is usage_known
+
+
 def test_timeouts_and_connection_failures_are_transient():
     def timeout(request):
         raise httpx2.ReadTimeout("slow", request=request)
@@ -204,9 +277,10 @@ def test_timeouts_and_connection_failures_are_transient():
 
     for handler in (timeout, refused):
         client, seen = adapter(handler)
-        with pytest.raises(TransientLLMError):
+        with pytest.raises(TransientLLMError) as caught:
             ask(client)
         assert len(seen) == 1
+        assert caught.value.usage_known is False
 
 
 def test_refusal_truncation_and_bad_json_keep_their_usage():
@@ -264,7 +338,8 @@ def test_only_the_llm_package_imports_the_anthropic_sdk():
 
 def write_settings(tmp_path, **changes):
     values = {"provider": '"anthropic"', "model": '"claude-sonnet-5-5"', "max_usd_per_run": "0.10",
-              "max_input_tokens": "40000", "max_output_tokens": "4000", "request_timeout_seconds": "60"}
+              "max_input_tokens": "40000", "max_output_tokens": "4000",
+              "max_run_input_tokens": "150000", "max_run_output_tokens": "20000", "request_timeout_seconds": "60"}
     values.update(changes)
     lines = [f"{k} = {v}" for k, v in values.items() if v is not None]
     text = "[llm]\n" + "\n".join(lines) + '\n[llm.prices.claude-sonnet-5-5]\ninput_per_mtok = 2.0\noutput_per_mtok = 10.0\n'
@@ -277,6 +352,9 @@ def test_shipped_settings_match_the_documented_defaults():
     assert SETTINGS.model == "claude-sonnet-5-5"
     assert (SETTINGS.max_usd_per_run, SETTINGS.max_input_tokens, SETTINGS.max_output_tokens) == (
         Decimal("0.25"), 40_000, 6_000)
+    assert (SETTINGS.max_run_input_tokens, SETTINGS.max_run_output_tokens) == (150_000, 20_000)
+    assert SETTINGS.max_run_input_tokens >= SETTINGS.max_input_tokens
+    assert SETTINGS.max_run_output_tokens >= SETTINGS.max_output_tokens
     prices = SETTINGS.prices["claude-sonnet-5-5"]
     assert (prices.input_per_mtok, prices.output_per_mtok) == (2, 10)
 
@@ -287,6 +365,9 @@ def test_shipped_settings_match_the_documented_defaults():
         ({"max_usd_per_run": None}, "llm.max_usd_per_run"),
         ({"max_usd_per_run": "-1"}, "llm.max_usd_per_run"),
         ({"max_output_tokens": '"lots"'}, "llm.max_output_tokens"),
+        ({"max_run_input_tokens": None}, "llm.max_run_input_tokens"),
+        ({"max_run_input_tokens": "39999"}, "llm.max_run_input_tokens"),
+        ({"max_run_output_tokens": "3999"}, "llm.max_run_output_tokens"),
         ({"provider": '"openai"'}, "llm.provider"),
         ({"max_usd": "1"}, "llm.max_usd"),
         ({"model": '"unpriced-model"'}, "unpriced-model"),

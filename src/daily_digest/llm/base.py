@@ -28,7 +28,14 @@ class LLMError(Exception):
 
 
 class TransientLLMError(LLMError):
-    """Worth retrying: rate limit, server error, timeout, connection failure."""
+    """Worth retrying: rate limit, server error, timeout, connection failure.
+
+    `usage_known` is False when the request may have been billed without us seeing the usage.
+    """
+
+    def __init__(self, message: str, usage: Usage = Usage(), *, usage_known: bool = True) -> None:
+        super().__init__(message, usage)
+        self.usage_known = usage_known
 
 
 class PermanentLLMError(LLMError):
