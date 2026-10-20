@@ -46,9 +46,6 @@ jobs:
           base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
           tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           curl -sSfL -o "$RUNNER_TEMP/$tarball" "$base/$tarball"
-          curl -sSfL -o "$RUNNER_TEMP/checksums.txt" "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
-          # Must match both the checksums file and the hash pinned above.
-          (cd "$RUNNER_TEMP" && grep " $tarball\$" checksums.txt | sha256sum -c -)
           echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" gitleaks
 
@@ -71,7 +68,9 @@ jobs:
           else
             range="$PUSH_AFTER"
           fi
-          if [ "$(git rev-list --count "$range")" = "0" ]; then
+          # Separate line so a bad range fails the step instead of looking like zero.
+          count=$(git rev-list --count "$range")
+          if [ "$count" = "0" ]; then
             echo "No commits in $range; nothing to scan."
             exit 0
           fi

@@ -69,12 +69,23 @@ Without a key, `draft` exits with a one-line error; `draft --stub` needs none.
 
 ## Secret scanning
 
-CI runs [Gitleaks](https://github.com/gitleaks/gitleaks) v8.30.1 on the commits of every push and pull request and fails the build on a finding. The release binary is downloaded in the job and checked against a pinned sha256 and the release's published checksums. The job has read-only permissions, and CI uses no secrets or tokens at all (the tests use the mock LLM provider).
+CI runs [Gitleaks](https://github.com/gitleaks/gitleaks) on the commits of every push to `main` and every pull request, and fails the build on a finding. A feature branch is covered once its PR is open. The job downloads a pinned release binary and checks it against a pinned sha256 taken from the release's published checksums file. It has read-only permissions, and CI uses no secrets or tokens at all (the tests use the mock LLM provider).
 
-To scan locally on macOS, get v8.30.1 from the [releases page](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1) (the `gitleaks_8.30.1_darwin_arm64.tar.gz` or `darwin_x64` archive; `brew install gitleaks` also works but may be newer), then scan the whole history of every branch from the repo root:
+To scan locally on macOS, download the same release with `curl` (unlike a browser, it does not trigger Gatekeeper quarantine), check the hash, and run the binary from where you extracted it. Use `arm64` on Apple silicon and `x64` on Intel:
 
 ```
-gitleaks git --log-opts="--all" --redact .
+V=8.30.1; ARCH=arm64   # or x64
+curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_darwin_$ARCH.tar.gz"
+# arm64: b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5
+# x64:   dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709
+shasum -a 256 gitleaks.tar.gz   # must print the hash for your ARCH
+mkdir -p ~/bin/gitleaks-$V && tar -xzf gitleaks.tar.gz -C ~/bin/gitleaks-$V gitleaks
 ```
 
-`--redact` keeps any secret out of the output. The exit code is 1 when something is found and 0 when clean. To scan only what your branch adds, use `--log-opts="origin/main..HEAD"`.
+Then scan the whole history of every branch from the repo root. `--redact` keeps any secret out of the output:
+
+```
+~/bin/gitleaks-$V/gitleaks git --log-opts="--all" --redact .
+```
+
+The exit code is 1 when something is found and 0 when clean. To scan only what your branch adds, use `--log-opts="origin/main..HEAD"`. If you downloaded the archive in a browser instead, macOS may refuse to run it; `xattr -d com.apple.quarantine gitleaks` on the extracted binary fixes that.
