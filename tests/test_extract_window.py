@@ -72,7 +72,7 @@ def test_since_is_local_midnight_of_the_first_day(today, days, first_day):
 
 def _run_cli(monkeypatch, tmp_path, *argv):
     calls = []
-    monkeypatch.setattr(cli, "run_extract", lambda db, limit, since, days: calls.append((since, days)) or 0)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: calls.append(days) or 0)
     monkeypatch.setattr("sys.argv", ["daily-digest", "extract", "--db", str(tmp_path / "x.db"), *argv])
     with pytest.raises(SystemExit) as exit_info:
         cli.main()
@@ -82,9 +82,8 @@ def _run_cli(monkeypatch, tmp_path, *argv):
 def test_days_defaults_to_two_and_a_wider_value_widens_the_window(monkeypatch, tmp_path):
     _, default = _run_cli(monkeypatch, tmp_path)
     _, wide = _run_cli(monkeypatch, tmp_path, "--days", "7")
-    assert default[0][1] == 2 and wide[0][1] == 7
-    assert default[0][0] == cli.extract_since(date.today(), 2)
-    assert wide[0][0] < default[0][0]
+    assert default == [2] and wide == [7]
+    assert cli.extract_since(date.today(), 7) < cli.extract_since(date.today(), 2)
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "x"])

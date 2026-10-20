@@ -62,7 +62,7 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
     return 0 if any(r.error is None for r in reports) else 1
 
 
-DEFAULT_EXTRACT_DAYS = 2  # yesterday and today: a digest is written for one day, so older pages are never read
+DEFAULT_EXTRACT_DAYS = 2  # a digest covers one day, so older pages are never read
 
 
 def extract_since(today: date, days: int) -> datetime:
@@ -80,11 +80,12 @@ def _positive_int(text: str) -> int:
     return value
 
 
-def run_extract(db_path: Path, limit: int | None, since: datetime, days: int = DEFAULT_EXTRACT_DAYS) -> int:
+def run_extract(db_path: Path, limit: int | None, days: int = DEFAULT_EXTRACT_DAYS) -> int:
     _warn_if_no_contact()
     store = _open_existing(db_path)
     if store is None:
         return 2
+    since = extract_since(date.today(), days)
     with store, HttpFetcher() as fetcher:
         robots = RobotsChecker(fetcher.fetch, user_agent())
         report = extract_articles(
@@ -222,8 +223,6 @@ def main() -> None:
         with _debug_logging(args.debug):
             raise SystemExit(run_draft(args.db or data_dir() / "digest.db", target, client))
     if args.command == "extract":
-        raise SystemExit(run_extract(
-            args.db or data_dir() / "digest.db", args.limit, extract_since(date.today(), args.days), args.days
-        ))
+        raise SystemExit(run_extract(args.db or data_dir() / "digest.db", args.limit, args.days))
     if args.command == "ingest":
         raise SystemExit(run_ingest(args.db or data_dir() / "digest.db", args.feeds))
