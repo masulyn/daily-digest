@@ -1,5 +1,7 @@
 """A canned-response client for tests. The nth call returns the nth response."""
 
+from decimal import Decimal
+
 from pydantic import BaseModel, ValidationError
 
 from .base import LLMResult, OutputInvalidError, T, Usage, describe_validation_error
@@ -13,12 +15,19 @@ class MockClient:
         usage: Usage = Usage(input_tokens=1000, output_tokens=200),
         max_input_tokens: int = 40_000,
         max_output_tokens: int = 4000,
+        max_review_rounds: int = 3,
     ) -> None:
         self._responses = list(responses)
         self._usage = usage
         self.max_input_tokens = max_input_tokens
         self.max_output_tokens = max_output_tokens
+        self.max_review_rounds = max_review_rounds
+        self.spent = Decimal(0)
+        self._degraded = False
         self.requests: list[dict] = []
+
+    def degraded(self) -> bool:
+        return self._degraded
 
     def complete(
         self, *, system: str, messages: list[dict], schema: type[T], max_tokens: int

@@ -4,7 +4,7 @@ import math
 import re
 from datetime import date, datetime
 
-from .contracts import CandidateItem, CitedSource, Draft, DraftSentence, FinalDigest
+from .contracts import CandidateItem, CitedSource, Draft, DraftSentence, FinalDigest, ReviewSummary
 
 WORDS_PER_MINUTE = 200
 # Only these carry a citation: facts, quotes and attributed views. Trends and transitions do not.
@@ -49,6 +49,7 @@ def build_digest(
     covered_date: date,
     generated_at: datetime,
     notes: list[str],
+    review: ReviewSummary | None = None,
 ) -> FinalDigest:
     """Markers are numbered by first appearance; Sources lists exactly the items that got a marker."""
     by_id = {item.id: item for item in items}
@@ -75,6 +76,7 @@ def build_digest(
         word_count=words,
         reading_time_minutes=max(1, math.ceil(words / WORDS_PER_MINUTE)),
         notes=notes,
+        review=review or ReviewSummary(status="unreviewed"),
     )
 
 

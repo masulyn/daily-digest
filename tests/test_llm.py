@@ -390,7 +390,8 @@ def test_only_the_llm_package_imports_the_anthropic_sdk():
 def write_settings(tmp_path, **changes):
     values = {"provider": '"anthropic"', "model": '"claude-sonnet-5-5"', "max_usd_per_run": "0.10",
               "max_input_tokens": "40000", "max_output_tokens": "4000",
-              "max_run_input_tokens": "150000", "max_run_output_tokens": "20000", "request_timeout_seconds": "60"}
+              "max_run_input_tokens": "150000", "max_run_output_tokens": "20000", "max_review_rounds": "3",
+              "request_timeout_seconds": "60"}
     values.update(changes)
     lines = [f"{k} = {v}" for k, v in values.items() if v is not None]
     text = "[llm]\n" + "\n".join(lines) + '\n[llm.prices.claude-sonnet-5-5]\ninput_per_mtok = 2.0\noutput_per_mtok = 10.0\n'
@@ -404,6 +405,7 @@ def test_shipped_settings_match_the_documented_defaults():
     assert (SETTINGS.max_usd_per_run, SETTINGS.max_input_tokens, SETTINGS.max_output_tokens) == (
         Decimal("0.25"), 40_000, 6_000)
     assert (SETTINGS.max_run_input_tokens, SETTINGS.max_run_output_tokens) == (150_000, 20_000)
+    assert SETTINGS.max_review_rounds == 3
     assert SETTINGS.max_run_input_tokens >= SETTINGS.max_input_tokens
     assert SETTINGS.max_run_output_tokens >= SETTINGS.max_output_tokens
     prices = SETTINGS.prices["claude-sonnet-5-5"]
@@ -419,6 +421,10 @@ def test_shipped_settings_match_the_documented_defaults():
         ({"max_run_input_tokens": None}, "llm.max_run_input_tokens"),
         ({"max_run_input_tokens": "39999"}, "llm.max_run_input_tokens"),
         ({"max_run_output_tokens": "3999"}, "llm.max_run_output_tokens"),
+        ({"max_review_rounds": None}, "llm.max_review_rounds"),
+        ({"max_review_rounds": "0"}, "llm.max_review_rounds"),
+        ({"max_review_rounds": "-2"}, "llm.max_review_rounds"),
+        ({"max_review_rounds": '"three"'}, "llm.max_review_rounds"),
         ({"provider": '"openai"'}, "llm.provider"),
         ({"max_usd": "1"}, "llm.max_usd"),
         ({"model": '"unpriced-model"'}, "unpriced-model"),

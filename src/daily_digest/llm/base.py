@@ -1,6 +1,7 @@
 """The model interface and its errors. Agents depend on this, never on a provider SDK."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Generic, Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -70,7 +71,12 @@ class LLMClient(Protocol):
 
 
 class BudgetedClient(LLMClient, Protocol):
-    """A client that also says how large a reply the caller may ask for."""
+    """A client that also knows its limits and how much of the run budget is used."""
 
     max_input_tokens: int
     max_output_tokens: int
+    max_review_rounds: int
+    spent: Decimal
+
+    def degraded(self) -> bool:
+        """True once spending has reached the degraded-mode share of the dollar cap."""

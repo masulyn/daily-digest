@@ -76,6 +76,38 @@ class DraftIssue(BaseModel):
     required_change: str = Field(min_length=1)
 
 
+Severity = Literal["blocking", "advisory"]
+IssueCategory = Literal[
+    "unsupported", "overstated", "opinion", "promotional", "hedge_lost",
+    "attribution", "disagreement", "tone", "other",
+]
+ReviewStatus = Literal["approved", "not_converged", "degraded", "unreviewed", "failed"]
+
+
+class ReviewIssue(BaseModel):
+    """One problem with one sentence (or the headline). It asks for a reword or a removal, never an addition."""
+
+    section: SectionName | Literal["headline"]
+    index: int | None = None  # sentence position within the section, counted from 0; absent for the headline
+    severity: Severity
+    category: IssueCategory
+    required_change: str = Field(min_length=1, max_length=300)
+
+
+class ReviewResult(BaseModel):
+    issues: list[ReviewIssue] = Field(default_factory=list)
+    # The model's own verdict is never trusted; code recomputes it from the issues.
+    verdict: Literal["approve", "revise"] = "revise"
+
+
+class ReviewSummary(BaseModel):
+    status: ReviewStatus
+    rounds: int = Field(default=0, ge=0)  # model reviews that ran
+    removed: int = Field(default=0, ge=0)  # sentences code removed because they stayed blocked
+    unresolved: list[str] = Field(default_factory=list)  # blocking issues left, as text
+    advisory: list[str] = Field(default_factory=list)
+
+
 class CitedSource(BaseModel):
     number: int = Field(ge=1)
     title: str
@@ -94,3 +126,4 @@ class FinalDigest(BaseModel):
     word_count: int
     reading_time_minutes: int
     notes: list[str] = Field(default_factory=list)
+    review: ReviewSummary = Field(default_factory=lambda: ReviewSummary(status="unreviewed"))

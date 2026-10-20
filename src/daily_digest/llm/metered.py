@@ -24,6 +24,7 @@ from .base import (
 log = logging.getLogger("daily_digest.llm")
 
 MAX_ATTEMPTS = 3  # the first try plus two retries
+DEGRADED_SHARE = Decimal("0.8")  # PRD FR-7.10: past this share of the dollar cap, no new model call starts
 _BACKOFF_SECONDS = (1.0, 2.0)
 _CHARS_PER_TOKEN = 2.7  # one real digest measured 2.8; text heavy in digits or URLs can run lower
 _MILLION = Decimal(1_000_000)
@@ -57,6 +58,7 @@ class MeteredClient:
     ) -> None:
         self.max_input_tokens = settings.max_input_tokens
         self.max_output_tokens = settings.max_output_tokens
+        self.max_review_rounds = settings.max_review_rounds
         self._inner = inner
         self._settings = settings
         self._prices = settings.prices[settings.model]
@@ -66,6 +68,9 @@ class MeteredClient:
         self.output_tokens = 0
         self.spent = Decimal(0)
         self.unknown_usage_attempts = 0
+
+    def degraded(self) -> bool:
+        return self.spent >= self._settings.max_usd_per_run * DEGRADED_SHARE
 
     def usage_line(self) -> str:
         line = (
