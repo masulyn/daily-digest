@@ -582,3 +582,59 @@ def test_control_characters_never_reach_the_terminal(db, monkeypatch, capsys):
     fake_api(monkeypatch, lambda r: reply)
     assert run_main(monkeypatch, *draft_args(db)) == 0
     assert "\x1b" not in capsys.readouterr().out
+
+
+# --- diagnostics -----------------------------------------------------------------------
+
+def test_retry_reason_is_logged_without_any_draft_text(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    bad = make_draft(199)
+    bad.worth_a_closer_look.append(
+        sentence("attributed_opinion", text="SECRETSENTENCE costs will fall.", speaker="Nobody Known")
+    )
+    bad.headline = "SECRETHEADLINE"
+    write_draft(items(), MockClient([bad, make_draft(250)]))
+    lines = [r.getMessage() for r in caplog.records if r.name == "daily_digest.editor"]
+    assert len(lines) == 1
+    assert "they must have 200 to 500" in lines[0]
+    assert "dropped 1 sentence(s)" in lines[0] and "speaker is not named" in lines[0]
+    assert "SECRETSENTENCE" not in caplog.text and "SECRETHEADLINE" not in caplog.text
+
+
+def test_schema_failure_reason_is_logged_without_the_reply(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    leak = '{"headline": "SENSITIVE-REPLY-TEXT", "what_you_need_to_know": 5}'
+    write_draft(items(), MockClient([leak, make_draft(250)]))
+    assert "did not match the format" in caplog.text and "SENSITIVE-REPLY-TEXT" not in caplog.text
+
+
+def test_a_clean_first_attempt_logs_nothing(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    write_draft(items(), MockClient([make_draft(250)]))
+    assert not [r for r in caplog.records if r.name == "daily_digest.editor"]
+
+
+def test_dropped_note_shows_type_and_truncated_text():
+    draft = make_draft(260)
+    long_text = "Analysts say costs will fall " + "x" * 300
+    draft.worth_a_closer_look.append(sentence("attributed_opinion", text=long_text, speaker="Nobody Known"))
+    _, notes = write_draft(items(), MockClient([draft]))
+    note = notes[0]
+    assert "(attributed_opinion)" in note and '"Analysts say costs will fall' in note
+    assert "..." in note and "x" * 250 not in note and note.endswith("speaker is not named in the cited item")
+
+
+def test_feedback_lists_at_most_ten_notes():
+    draft = make_draft(260)
+    draft.what_you_need_to_know += [sentence("factual", ids=("nope",)) for _ in range(15)]
+    draft.headline = "word " * 20
+    client = MockClient([draft, make_draft(250)])
+    write_draft(items(), client)
+    feedback = client.requests[1]["messages"][2]["content"]
+    assert feedback.count("dropped what_you_need_to_know") == 10 and "5 more sentences" in feedback
+
+
+def test_both_prompts_tell_the_model_to_attribute_by_name():
+    for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
+        assert "only when the sentence text names who holds the view" in prompt
+        assert "otherwise leave it out" in prompt

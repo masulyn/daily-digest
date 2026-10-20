@@ -4,6 +4,7 @@ Everything the model returns is checked in code against the text that was sent. 
 markers, the Sources list and all citation metadata come from stored items, never from the model.
 """
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -18,7 +19,11 @@ MIN_BODY_WORDS = 200
 MAX_BODY_WORDS = 500
 MIN_QUOTE_CHARS = 15  # a shorter "quote" is a word or two that would pass the substring check anywhere
 MIN_SPEAKER_CHARS = 3
+MAX_NOTE_TEXT = 200  # enough for the author to judge a dropped sentence without flooding the terminal
+MAX_FEEDBACK_NOTES = 10  # keeps the retry message bounded when many sentences are dropped
 MAX_ATTEMPTS = 2  # the first reply and one retry with the problems appended
+
+log = logging.getLogger(__name__)
 
 # PRD section 3.A, relevance to the reader.
 HIGH_TIER = (
@@ -68,7 +73,9 @@ Sentences: write each section as a list of sentences and give each one a type:
 from the item, without surrounding quotation marks), put the speaker's name in `speaker`, and \
 include both in the sentence text. List the item.
 - attributed_opinion: a view held by a named person or organization. Put the name in `speaker` \
-and in the sentence text. List the items.
+and in the sentence text. List the items. Use this type only when the sentence text names who \
+holds the view. If a view cannot be attributed by name, include it only when the item itself \
+states it as fact; otherwise leave it out.
 - trend: a pattern that at least two independent items support together. List at least two items.
 - transition: connective text that makes no claim. List no items.
 Set starts_paragraph to true on the first sentence of each paragraph.
@@ -131,6 +138,7 @@ class Checked:
     draft: Draft
     notes: list[str]  # sentences dropped, and why
     problems: list[str]  # reasons to ask the model again
+    dropped: list[str]  # why each sentence was dropped, without its text, for the debug log
 
 
 class WriterFailed(Exception):
@@ -257,7 +265,7 @@ def check_draft(
     `max_sentences` caps the two sections and `section_ids` limits each section to the items it
     already cited, so a revision can reword or remove but not add.
     """
-    notes, problems = [], []
+    notes, problems, dropped = [], [], []
     kept: dict[str, list[DraftSentence]] = {}
     for position, name in enumerate(("what_you_need_to_know", "worth_a_closer_look")):
         kept[name] = []
@@ -267,7 +275,9 @@ def check_draft(
             if not reason and section_ids and not set(cleaned.item_ids) <= section_ids[position]:
                 reason = "cites an item this section did not cite before"
             if reason:
-                notes.append(f"dropped {name} sentence {number}: {reason}")
+                shown = cleaned.text if len(cleaned.text) <= MAX_NOTE_TEXT else cleaned.text[:MAX_NOTE_TEXT] + "..."
+                notes.append(f'dropped {name} sentence {number} ({cleaned.type}): "{shown}" - {reason}')
+                dropped.append(f"{name} sentence {number}: {reason}")
             else:
                 kept[name].append(cleaned)
         if not kept[name]:
@@ -294,11 +304,18 @@ def check_draft(
         or len(draft.worth_a_closer_look) > max_sentences[1]
     ):
         problems.append("the revision adds sentences; it may only reword or remove")
-    return Checked(checked, notes, problems)
+    return Checked(checked, notes, problems, dropped)
+
+
+def _redact(reason: str) -> str:
+    """Reasons can quote a host or id taken from the draft; the log keeps only our wording."""
+    return re.sub(r"'[^']*'|\"[^\"]*\"", "...", reason)
 
 
 def _feedback(checked_problems: list[str], notes: list[str]) -> str:
-    lines = [f"- {line}" for line in [*checked_problems, *notes]]
+    lines = [f"- {line}" for line in [*checked_problems, *notes[:MAX_FEEDBACK_NOTES]]]
+    if len(notes) > MAX_FEEDBACK_NOTES:
+        lines.append(f"- {len(notes) - MAX_FEEDBACK_NOTES} more sentences were dropped")
     return "Your draft has these problems. Fix them and reply with the full draft:\n" + "\n".join(lines)
 
 
@@ -317,12 +334,19 @@ def _generate(
                 system=system, messages=messages, schema=Draft, max_tokens=client.max_output_tokens
             )
         except OutputInvalidError as error:
-            problems, notes, reply = [f"the reply did not match the format: {str(error)[:500]}"], [], error.raw_text
+            problems, notes, dropped = [f"the reply did not match the format: {str(error)[:500]}"], [], []
+            reply = error.raw_text
         else:
             checked = check_draft(result.parsed, sent, max_sentences=max_sentences, section_ids=section_ids)
             if not checked.problems:
                 return checked.draft, checked.notes
-            problems, notes, reply = checked.problems, checked.notes, result.parsed.model_dump_json()
+            problems, notes, dropped = checked.problems, checked.notes, checked.dropped
+            reply = result.parsed.model_dump_json()
+        # Reasons only: the problem strings are our own wording, never the reply or any draft text.
+        log.debug(
+            "writer attempt %d failed; problems: %s; dropped %d sentence(s): %s",
+            attempt, "; ".join(map(_redact, problems)), len(dropped), "; ".join(map(_redact, dropped)) or "none",
+        )
         if attempt == MAX_ATTEMPTS:
             raise WriterFailed(f"the model's draft failed the checks twice: {'; '.join(problems)[:400]}")
         previous = [{"role": "assistant", "content": reply}] if reply else []
