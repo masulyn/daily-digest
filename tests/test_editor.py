@@ -246,12 +246,12 @@ def test_signed_figures_keep_their_sign():
 
 def test_a_capitalized_host_must_come_from_the_cited_item():
     invented = notes_for("factual", text="Readers can visit Evil.com for details.")
-    assert len(invented) == 1 and "'Evil.com'" in invented[0]
+    assert len(invented) == 1 and "mentions a host name" in invented[0] and "'Evil.com'" in invented[0]
     sent = {"a1": SentItem(title="Deal", body="The firm, Character.AI, and Amazon.com both agreed.")}
     draft = Draft(headline=HEADLINE, what_you_need_to_know=[sentence("factual", ids=("a1",), text="Character.AI and Amazon.com agreed.")],
                   worth_a_closer_look=[filler(5, ("a1",))])
     assert check_draft(draft, sent).notes == []
-    assert any("headline mentions 'Evil.com'" in p for p in check_draft(make_draft(220, "Visit Evil.com now"), render_items(items())[1]).problems)
+    assert any("headline mentions a host name" in p for p in check_draft(make_draft(220, "Visit Evil.com now"), render_items(items())[1]).problems)
 
 
 def test_leading_markdown_is_stripped_and_a_quoted_headline_is_a_problem():
@@ -350,7 +350,7 @@ def test_a_revision_citing_an_uncited_item_is_rejected():
     revised.what_you_need_to_know[1] = sentence("factual", ids=("a5",), text="A survey found that most firms have no governance owner.")
     client = MockClient([revised])
     kept, notes = revise(original, [issue(1)], items(), client)
-    assert len(notes) == 1 and "'a5', which was not provided" in notes[0]
+    assert len(notes) == 1 and "not provided" in notes[0] and "(item 'a5')" in notes[0]
     assert all("a5" not in s.item_ids for s in kept.what_you_need_to_know)
 
 
@@ -637,4 +637,15 @@ def test_feedback_lists_at_most_ten_notes():
 def test_both_prompts_tell_the_model_to_attribute_by_name():
     for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
         assert "only when the sentence text names who holds the view" in prompt
-        assert "otherwise leave it out" in prompt
+        assert "no named holder" in prompt
+
+
+def test_a_hostile_item_id_never_reaches_the_log(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    bad = make_draft(260)
+    bad.what_you_need_to_know.append(sentence("factual", ids=('it\'s "x"',)))
+    bad.headline = "word " * 20
+    write_draft(items(), MockClient([bad, make_draft(250)]))
+    assert "cites an item that was not provided" in caplog.text
+    for fragment in ("it's", 'x"', '"x'):
+        assert fragment not in caplog.text

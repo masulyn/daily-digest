@@ -73,9 +73,8 @@ Sentences: write each section as a list of sentences and give each one a type:
 from the item, without surrounding quotation marks), put the speaker's name in `speaker`, and \
 include both in the sentence text. List the item.
 - attributed_opinion: a view held by a named person or organization. Put the name in `speaker` \
-and in the sentence text. List the items. Use this type only when the sentence text names who \
-holds the view. If a view cannot be attributed by name, include it only when the item itself \
-states it as fact; otherwise leave it out.
+and in the sentence text. List the items. Use attributed_opinion only when the sentence text names who \
+holds the view. If a view has no named holder, state it as fact only if the item does; otherwise omit it.
 - trend: a pattern that at least two independent items support together. List at least two items.
 - transition: connective text that makes no claim. List no items.
 Set starts_paragraph to true on the first sentence of each paragraph.
@@ -138,7 +137,7 @@ class Checked:
     draft: Draft
     notes: list[str]  # sentences dropped, and why
     problems: list[str]  # reasons to ask the model again
-    dropped: list[str]  # why each sentence was dropped, without its text, for the debug log
+    dropped: list[str]  # why each sentence was dropped, without its text
 
 
 class WriterFailed(Exception):
@@ -192,48 +191,49 @@ def _quoted_passages(text: str) -> list[str]:
     return [span for span in spans if len(span) >= MIN_QUOTE_CHARS]
 
 
-def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> str | None:
+def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tuple[str, str] | None:
+    """(reason, detail): the reason is fixed wording and safe to log; the detail may hold model text."""
     text = sentence.text
     if has_url(text) or _MARKER.search(text):
-        return "contains a URL or a citation marker"
+        return "contains a URL or a citation marker", ""
     unknown = [i for i in sentence.item_ids if i not in sent]
     if unknown:
-        return f"cites item {unknown[0]!r}, which was not provided"
+        return "cites an item that was not provided", f" (item {unknown[0]!r})"
     if sentence.type == "trend" and len(sentence.item_ids) < 2:
-        return "a trend must cite at least two items"
+        return "a trend must cite at least two items", ""
     if sentence.type not in ("trend", "transition") and not sentence.item_ids:
-        return "cites no item"
+        return "cites no item", ""
     cited = [sent[i] for i in sentence.item_ids]
     bodies = [normalize(item.body) for item in cited]
     named_in = [normalize(f"{item.title} {item.body}") for item in cited]
     normalized_text = normalize(text)
     if host := _unsupported_host(text, named_in):
-        return f"mentions {host!r}, which is not in the cited items"
+        return "mentions a host name that is not in the cited items", f" ({host!r})"
 
     if sentence.type == "quote":
         quote = normalize(sentence.quote or "")
         if has_url(sentence.quote or ""):
-            return "quote contains a URL"
+            return "quote contains a URL", ""
         if len(quote) < MIN_QUOTE_CHARS:
-            return "quote is missing or too short to verify"
+            return "quote is missing or too short to verify", ""
         if not any(_contains(body, quote) for body in bodies):
-            return "quote is not in the cited item"
+            return "quote is not in the cited item", ""
         if quote not in normalized_text:
-            return "quote is not in the sentence"
+            return "quote is not in the sentence", ""
     if sentence.type in ("quote", "attributed_opinion"):
         speaker = normalize(sentence.speaker or "")
         if has_url(sentence.speaker or ""):
-            return "speaker contains a URL"
+            return "speaker contains a URL", ""
         if len(speaker) < MIN_SPEAKER_CHARS or not speaker[0].isupper():
-            return "speaker is missing or is not a name"
+            return "speaker is missing or is not a name", ""
         if not any(_contains(text_, speaker) for text_ in named_in):
-            return "speaker is not named in the cited item"
+            return "speaker is not named in the cited item", ""
         if not _contains(normalized_text, speaker):
-            return "speaker is not named in the sentence"
+            return "speaker is not named in the sentence", ""
     # Any quoted passage must be real, whatever type the model gave the sentence.
     for passage in _quoted_passages(text):
         if not any(_contains(body, passage) for body in bodies):
-            return "a quoted passage is not in the cited items"
+            return "a quoted passage is not in the cited items", ""
     return None
 
 
@@ -271,12 +271,13 @@ def check_draft(
         kept[name] = []
         for number, sentence in enumerate(getattr(draft, name), start=1):
             cleaned = _clean(sentence)
-            reason = _sentence_problem(cleaned, sent)
+            found = _sentence_problem(cleaned, sent)
+            reason, detail = found if found else ("", "")
             if not reason and section_ids and not set(cleaned.item_ids) <= section_ids[position]:
                 reason = "cites an item this section did not cite before"
             if reason:
                 shown = cleaned.text if len(cleaned.text) <= MAX_NOTE_TEXT else cleaned.text[:MAX_NOTE_TEXT] + "..."
-                notes.append(f'dropped {name} sentence {number} ({cleaned.type}): "{shown}" - {reason}')
+                notes.append(f'dropped {name} sentence {number} ({cleaned.type}): "{shown}" - {reason}{detail}')
                 dropped.append(f"{name} sentence {number}: {reason}")
             else:
                 kept[name].append(cleaned)
@@ -286,8 +287,8 @@ def check_draft(
     headline = _plain(draft.headline)
     if has_url(headline) or _MARKER.search(headline):
         problems.append("the headline contains a URL or a citation marker")
-    if host := _unsupported_host(headline, [normalize(f"{i.title} {i.body}") for i in sent.values()]):
-        problems.append(f"the headline mentions {host!r}, which is not in the items")
+    if _unsupported_host(headline, [normalize(f"{i.title} {i.body}") for i in sent.values()]):
+        problems.append("the headline mentions a host name that is not in the items")
     if _quoted_passages(headline):
         problems.append("the headline contains a quotation; quotes belong in the sections")
     if len(headline.split()) > MAX_HEADLINE_WORDS:
@@ -305,11 +306,6 @@ def check_draft(
     ):
         problems.append("the revision adds sentences; it may only reword or remove")
     return Checked(checked, notes, problems, dropped)
-
-
-def _redact(reason: str) -> str:
-    """Reasons can quote a host or id taken from the draft; the log keeps only our wording."""
-    return re.sub(r"'[^']*'|\"[^\"]*\"", "...", reason)
 
 
 def _feedback(checked_problems: list[str], notes: list[str]) -> str:
@@ -334,6 +330,7 @@ def _generate(
                 system=system, messages=messages, schema=Draft, max_tokens=client.max_output_tokens
             )
         except OutputInvalidError as error:
+            # Safe to log only because describe_validation_error gives locations and messages, never the input.
             problems, notes, dropped = [f"the reply did not match the format: {str(error)[:500]}"], [], []
             reply = error.raw_text
         else:
@@ -342,10 +339,10 @@ def _generate(
                 return checked.draft, checked.notes
             problems, notes, dropped = checked.problems, checked.notes, checked.dropped
             reply = result.parsed.model_dump_json()
-        # Reasons only: the problem strings are our own wording, never the reply or any draft text.
+        # Fixed wording only: nothing from the reply or the draft may be built into these strings.
         log.debug(
             "writer attempt %d failed; problems: %s; dropped %d sentence(s): %s",
-            attempt, "; ".join(map(_redact, problems)), len(dropped), "; ".join(map(_redact, dropped)) or "none",
+            attempt, "; ".join(problems), len(dropped), "; ".join(dropped) or "none",
         )
         if attempt == MAX_ATTEMPTS:
             raise WriterFailed(f"the model's draft failed the checks twice: {'; '.join(problems)[:400]}")
