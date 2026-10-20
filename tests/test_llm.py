@@ -24,6 +24,7 @@ from daily_digest.llm.anthropic_client import API_BASE_URL, AnthropicClient
 from daily_digest.llm.metered import cost_usd
 
 SETTINGS = load_llm_settings()
+TIGHT = SETTINGS.model_copy(update={"max_usd_per_run": Decimal("0.10")})  # small enough for one call to reach
 FAKE_KEY = "sk-ant-FAKE-test-key-0123456789"
 
 
@@ -63,7 +64,7 @@ def test_usage_line_totals_tokens_and_dollars():
 # --- budget ----------------------------------------------------------------------------
 
 def test_worst_case_over_the_dollar_cap_blocks_the_call():
-    client, inner, _ = metered(['{"word": "a"}'])
+    client, inner, _ = metered(['{"word": "a"}'], settings=TIGHT)
     # about 31k estimated input tokens plus 4k output is roughly $0.10 at the default prices
     with pytest.raises(BudgetExceeded, match="run cap"):
         ask(client, "x" * 93_000)
@@ -116,7 +117,7 @@ def test_permanent_and_invalid_errors_do_not_retry(error):
 
 def test_every_call_is_logged_with_the_required_fields(caplog):
     caplog.set_level(logging.DEBUG, logger="daily_digest.llm")
-    client, _, _ = metered([TransientLLMError("429"), '{"word": "a"}'], usage=Usage(input_tokens=2_000, output_tokens=100))
+    client, _, _ = metered([TransientLLMError("429"), '{"word": "a"}'], settings=TIGHT, usage=Usage(input_tokens=2_000, output_tokens=100))
     ask(client, "secret prompt body")
     lines = [r.getMessage() for r in caplog.records]
     assert len(lines) == 2
@@ -275,7 +276,7 @@ def write_settings(tmp_path, **changes):
 def test_shipped_settings_match_the_documented_defaults():
     assert SETTINGS.model == "claude-sonnet-5-5"
     assert (SETTINGS.max_usd_per_run, SETTINGS.max_input_tokens, SETTINGS.max_output_tokens) == (
-        Decimal("0.10"), 40_000, 4_000)
+        Decimal("0.25"), 40_000, 6_000)
     prices = SETTINGS.prices["claude-sonnet-5-5"]
     assert (prices.input_per_mtok, prices.output_per_mtok) == (2, 10)
 

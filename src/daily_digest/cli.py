@@ -20,7 +20,8 @@ from .config import (
     load_llm_settings,
     load_sources,
 )
-from .editor import EditorFailed
+from .digest import render_markdown
+from .editor import WriterFailed
 from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
 from .graph import run_digest
@@ -108,35 +109,35 @@ def _build_client(settings_path: Path) -> MeteredClient | None:
 
 def _printable(text: str) -> str:
     """Titles come from the web and picks from a model; neither may send control codes to the terminal."""
-    return "".join(c if c.isprintable() else " " for c in text)
+    return "".join(c if c.isprintable() or c == "\n" else " " for c in text)
 
 
 def run_draft(db_path: Path, target: date, client: MeteredClient | None = None) -> int:
-    """Print the day's items from the local database: Editor picks, or stub summaries without a client."""
+    """Print the day's digest from the local database, or stub summaries without a client."""
     try:
-        store = _open_existing(db_path)
-        if store is None:
-            return 2
-        with store:
-            state = run_digest(store, target, client)
-    except (LLMError, EditorFailed) as error:
+        return _print_draft(db_path, target, client)
+    except (LLMError, WriterFailed) as error:
         print(f"error: {_printable(str(error))}", file=sys.stderr)
         return 1
     finally:
         if client is not None:
             print(client.usage_line())
+
+
+def _print_draft(db_path: Path, target: date, client: MeteredClient | None) -> int:
+    store = _open_existing(db_path)
+    if store is None:
+        return 2
+    with store:
+        state = run_digest(store, target, client)
     by_id = {item.id: item for item in state.items}
     for summary in state.summaries:
         item = by_id[summary.item_id]
         print(_printable(f"{item.title} ({item.source})"))
         print("\n".join(f"- {_printable(point)}" for point in summary.key_points))
         print(f"  {summary.source_url}")
-    for rank, pick in enumerate(state.selection, start=1):
-        item = by_id[pick.item_id]
-        print(_printable(f"{rank}. [{pick.theme}] {item.title} ({item.source})"))
-        print(f"   {item.canonical_url}")
-        for quote in pick.quotes:
-            print(_printable(f'   "{quote.text}" - {quote.speaker}'))
+    if state.digest:
+        print(_printable(render_markdown(state.digest)))
     for note in state.notes:
         print(_printable(note))
     return 0
@@ -171,7 +172,7 @@ def main() -> None:
     e = sub.add_parser("extract", help="fetch full article text for items whose feed text is too short")
     e.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     e.add_argument("--limit", type=int, default=None, help="maximum number of articles to fetch")
-    d = sub.add_parser("draft", help="have the Editor pick from one day's stored items (no fetching)")
+    d = sub.add_parser("draft", help="write the digest from one day's stored items with one model call (no fetching)")
     d.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     d.add_argument(
         "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",

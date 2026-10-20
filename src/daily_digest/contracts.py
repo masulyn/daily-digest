@@ -1,6 +1,8 @@
 """Shared data contracts. Every handoff between components is validated against these."""
 
+from datetime import date
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, Field
 
@@ -45,18 +47,50 @@ class ItemSummary(BaseModel):
     source_url: str
 
 
-class Quote(BaseModel):
+SentenceType = Literal["factual", "quote", "attributed_opinion", "trend", "transition"]
+SectionName = Literal["what_you_need_to_know", "worth_a_closer_look"]
+
+
+class DraftSentence(BaseModel):
+    """One sentence of the digest and what supports it (the provenance map, FR-1.1)."""
+
     text: str = Field(min_length=1)
-    speaker: str = Field(min_length=1)
+    type: SentenceType
+    item_ids: list[str] = Field(default_factory=list)
+    quote: str | None = None  # the exact quoted string; only for type "quote"
+    speaker: str | None = None  # for "quote" and "attributed_opinion"
+    starts_paragraph: bool = False
 
 
-class EditorPick(BaseModel):
-    item_id: str
-    theme: str = Field(min_length=1, max_length=80)
-    quotes: list[Quote] = Field(default_factory=list, max_length=2)
+class Draft(BaseModel):
+    headline: str = Field(min_length=1)
+    what_you_need_to_know: list[DraftSentence]
+    worth_a_closer_look: list[DraftSentence]
 
 
-class EditorSelection(BaseModel):
-    """What the Editor model returns: 3 to 8 picks, best first."""
+class DraftIssue(BaseModel):
+    """A required change to one sentence (or to the headline when `index` is None)."""
 
-    picks: list[EditorPick] = Field(min_length=3, max_length=8)
+    section: SectionName | Literal["headline"]
+    index: int | None = None
+    required_change: str = Field(min_length=1)
+
+
+class CitedSource(BaseModel):
+    number: int = Field(ge=1)
+    title: str
+    source: str
+    published: AwareDatetime
+    url: str
+
+
+class FinalDigest(BaseModel):
+    covered_date: date
+    generated_at: AwareDatetime
+    headline: str
+    what_you_need_to_know: list[str]  # paragraphs with [n] markers
+    worth_a_closer_look: list[str]
+    sources: list[CitedSource]
+    word_count: int
+    reading_time_minutes: int
+    notes: list[str] = Field(default_factory=list)

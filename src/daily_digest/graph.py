@@ -6,14 +6,15 @@ outside the state (the local store); the editor reaches a model only through the
 
 import operator
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import AwareDatetime, BaseModel
 
-from .contracts import CandidateItem, EditorPick, ItemSummary
-from .editor import select
+from .contracts import CandidateItem, Draft, FinalDigest, ItemSummary
+from .digest import build_digest
+from .editor import MIN_ITEMS, write_draft
 from .llm import BudgetedClient
 from .store import Store
 
@@ -24,7 +25,9 @@ class DigestState(BaseModel):
     window_end: AwareDatetime | None = None
     items: list[CandidateItem] = []
     summaries: list[ItemSummary] = []
-    selection: list[EditorPick] = []
+    generated_at: AwareDatetime | None = None
+    draft: Draft | None = None
+    digest: FinalDigest | None = None
     notes: Annotated[list[str], operator.add] = []  # non-fatal; nodes return only new notes
 
 
@@ -63,14 +66,19 @@ def summarize_stub(state: DigestState) -> dict:
     return {"summaries": summaries}
 
 
-def editor(state: DigestState, client: BudgetedClient) -> dict:
-    """Pick and group the day's items with one model call."""
-    picks, notes = select(state.items, client)
-    return {"selection": picks, "notes": notes}
+def editor_writer(state: DigestState, client: BudgetedClient) -> dict:
+    """Pick and write the digest with one model call; too few items skip the call."""
+    if len(state.items) < MIN_ITEMS:
+        return {"notes": [f"No significant developments: fewer than {MIN_ITEMS} items, so no model call was made"]}
+    if state.generated_at is None:
+        raise ValueError("generated_at must be set before the editor_writer node runs")
+    draft, notes = write_draft(state.items, client)
+    digest = build_digest(draft, state.items, state.target_date, state.generated_at, notes)
+    return {"draft": draft, "digest": digest, "notes": notes}
 
 
 def build_graph(store: Store, client: BudgetedClient | None = None):
-    """load_items -> editor -> end, or load_items -> summarize_stub -> end without a client.
+    """load_items -> editor_writer -> end, or load_items -> summarize_stub -> end without a client.
 
     The client carries its own budget (`MeteredClient`), so the graph holds no cost logic.
     """
@@ -79,7 +87,7 @@ def build_graph(store: Store, client: BudgetedClient | None = None):
     if client is None:
         second, node = "summarize_stub", summarize_stub
     else:
-        second, node = "editor", lambda state: editor(state, client)
+        second, node = "editor_writer", lambda state: editor_writer(state, client)
     graph.add_node(second, node)
     graph.add_edge(START, "load_items")
     graph.add_edge("load_items", second)
@@ -92,5 +100,6 @@ def run_digest(store: Store, target: date, client: BudgetedClient | None = None)
 
     LangGraph does not validate the last node's output, so this is the only check of it.
     """
-    result = build_graph(store, client).invoke(DigestState(target_date=target))
+    state = DigestState(target_date=target, generated_at=datetime.now(timezone.utc))
+    result = build_graph(store, client).invoke(state)
     return DigestState.model_validate(result)
