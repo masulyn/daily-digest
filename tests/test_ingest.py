@@ -122,12 +122,23 @@ def test_headline_only_items_with_the_same_title_are_not_merged():
 
 def test_long_feed_body_is_flagged_because_the_extract_is_cut():
     long_body = "A complete sentence about enterprise AI adoption. " * 40  # about 2,000 characters
-    exact = ("Word " * 400)[:1200]
+    exact = ("Word " * 400)[:1199] + "x"  # exactly 1,200 characters, not ending in a space
     store = Store(":memory:")
     feed = feed_xml(
         ("Long", "https://l.example.com/long", long_body),
         ("Exact", "https://l.example.com/exact", exact),
     )
+    # _body_text prefers <content:encoded> over <description>
+    encoded = (
+        b'<?xml version="1.0"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">'
+        b"<channel><title>t</title><item><title>Encoded</title><link>https://l.example.com/encoded</link>"
+        b"<pubDate>Wed, 14 Oct 2026 14:00:00 GMT</pubDate><description>short</description>"
+        b"<content:encoded><![CDATA[<p>" + long_body.encode() + b"</p>]]></content:encoded></item></channel></rss>"
+    )
     ingest(make_sources("l"), lambda url: (200, feed), allow_all(), store)
-    assert store.count() == 2
-    assert [url for _, url in store.pending_extraction()] == ["https://l.example.com/long"]
+    ingest(make_sources("m"), lambda url: (200, encoded), allow_all(), store)
+    assert store.count() == 3
+    assert sorted(url for _, url in store.pending_extraction()) == [
+        "https://l.example.com/encoded",
+        "https://l.example.com/long",
+    ]

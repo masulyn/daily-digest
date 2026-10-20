@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .contracts import CandidateItem, Draft, DraftIssue, DraftSentence
 from .digest import sentences, word_count
 from .llm import BudgetedClient, OutputInvalidError
+from .llm.metered import estimate_input_tokens
 
 MIN_ITEMS = 3
 MAX_HEADLINE_WORDS = 12
@@ -387,10 +388,42 @@ def _generate(
     raise AssertionError("unreachable")
 
 
+def fit_items(items: list[CandidateItem], client: BudgetedClient) -> tuple[list[CandidateItem], list[str]]:
+    """Shrink the prompt to the input ceiling: oldest items lose their full text, then are dropped.
+
+    Room is kept for one retry, which resends the prompt plus the first reply. The list is newest
+    first and keeps its order; 'oldest' stands in for 'lowest ranked' until relevance scoring
+    (FR-3.4) exists.
+    """
+    budget = client.max_input_tokens - client.max_output_tokens
+
+    def too_big(current: list[CandidateItem]) -> bool:
+        prompt, _ = render_items(current)
+        return estimate_input_tokens(SYSTEM_PROMPT, [{"content": prompt}], Draft) > budget
+
+    fitted, degraded, dropped = list(items), 0, 0
+    while fitted and too_big(fitted):
+        full = [n for n, item in enumerate(fitted) if item.article_text]
+        if full:
+            fitted[full[-1]] = fitted[full[-1]].model_copy(update={"article_text": None})
+            degraded += 1
+        else:
+            fitted.pop()
+            dropped += 1
+    notes = []
+    if degraded:
+        notes.append(f"sent {degraded} older item(s) as short extracts to stay within the input limit")
+    if dropped:
+        notes.append(f"left out {dropped} older item(s) to stay within the input limit")
+    return fitted, notes
+
+
 def write_draft(items: list[CandidateItem], client: BudgetedClient) -> tuple[Draft, list[str]]:
     """The draft and notes about dropped sentences. Needs at least MIN_ITEMS items."""
+    items, fit_notes = fit_items(items, client)
     prompt, sent = render_items(items)
-    return _generate(client, SYSTEM_PROMPT, [{"role": "user", "content": prompt}], sent)
+    draft, notes = _generate(client, SYSTEM_PROMPT, [{"role": "user", "content": prompt}], sent)
+    return draft, [*fit_notes, *notes]
 
 
 def revise(

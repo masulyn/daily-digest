@@ -154,7 +154,7 @@
 ---
 
 ### Feature 5: Writer Agent, Final Content (Priority: P0)
-- **Description:** Turns the approved draft into the final publishable newsletter with executive tone and a citation list. **v1 build note:** selection (Synthesizer) and first-draft writing are one model step, the Editor-Writer. The day's stored text is small (about 8k tokens for 20 items), so one call over the full text avoids lossy handoffs between a selector and a writer. Citation markers and the Sources list are added by code from stored items, not by the model.
+- **Description:** Turns the approved draft into the final publishable newsletter with executive tone and a citation list. **v1 build note:** selection (Synthesizer) and first-draft writing are one model step, the Editor-Writer. The day's stored text is small (about 8k tokens for 20 feed extracts, about 24k with full article text), so one call over the full text avoids lossy handoffs between a selector and a writer. Citation markers and the Sources list are added by code from stored items, not by the model.
 - **User Story:** As a C-level reader, I want a polished, scannable, credible briefing, so that I can trust it and use it immediately.
 - **Functional Requirements:**
   - FR-5.1: **Format:** Output a headline (≤ 12 words), a body of **200–500 words** (excluding headline and citations), and a **Sources** section at the bottom. The body has two labeled parts: "What you need to know" (trends) and "Worth a closer look" (distinctive viewpoints). Short paragraphs; no more than one short bullet list. **[ASSUMPTION]** Section labels can be refined by the owner.

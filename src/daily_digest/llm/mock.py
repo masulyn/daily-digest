@@ -11,10 +11,12 @@ class MockClient:
         responses: list[str | BaseModel | Exception],
         *,
         usage: Usage = Usage(input_tokens=1000, output_tokens=200),
+        max_input_tokens: int = 40_000,
         max_output_tokens: int = 4000,
     ) -> None:
         self._responses = list(responses)
         self._usage = usage
+        self.max_input_tokens = max_input_tokens
         self.max_output_tokens = max_output_tokens
         self.requests: list[dict] = []
 
