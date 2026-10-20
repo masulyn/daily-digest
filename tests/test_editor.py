@@ -246,12 +246,12 @@ def test_signed_figures_keep_their_sign():
 
 def test_a_capitalized_host_must_come_from_the_cited_item():
     invented = notes_for("factual", text="Readers can visit Evil.com for details.")
-    assert len(invented) == 1 and "'Evil.com'" in invented[0]
+    assert len(invented) == 1 and "mentions a host name" in invented[0] and "'Evil.com'" in invented[0]
     sent = {"a1": SentItem(title="Deal", body="The firm, Character.AI, and Amazon.com both agreed.")}
     draft = Draft(headline=HEADLINE, what_you_need_to_know=[sentence("factual", ids=("a1",), text="Character.AI and Amazon.com agreed.")],
                   worth_a_closer_look=[filler(5, ("a1",))])
     assert check_draft(draft, sent).notes == []
-    assert any("headline mentions 'Evil.com'" in p for p in check_draft(make_draft(220, "Visit Evil.com now"), render_items(items())[1]).problems)
+    assert any("headline mentions a host name" in p for p in check_draft(make_draft(220, "Visit Evil.com now"), render_items(items())[1]).problems)
 
 
 def test_leading_markdown_is_stripped_and_a_quoted_headline_is_a_problem():
@@ -350,7 +350,7 @@ def test_a_revision_citing_an_uncited_item_is_rejected():
     revised.what_you_need_to_know[1] = sentence("factual", ids=("a5",), text="A survey found that most firms have no governance owner.")
     client = MockClient([revised])
     kept, notes = revise(original, [issue(1)], items(), client)
-    assert len(notes) == 1 and "'a5', which was not provided" in notes[0]
+    assert len(notes) == 1 and "not provided" in notes[0] and "(item 'a5')" in notes[0]
     assert all("a5" not in s.item_ids for s in kept.what_you_need_to_know)
 
 
@@ -582,3 +582,76 @@ def test_control_characters_never_reach_the_terminal(db, monkeypatch, capsys):
     fake_api(monkeypatch, lambda r: reply)
     assert run_main(monkeypatch, *draft_args(db)) == 0
     assert "\x1b" not in capsys.readouterr().out
+
+
+# --- diagnostics -----------------------------------------------------------------------
+
+def test_retry_reason_is_logged_without_any_draft_text(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    bad = make_draft(199)
+    bad.worth_a_closer_look.append(
+        sentence("attributed_opinion", text="SECRETSENTENCE costs will fall.", speaker="Nobody Known")
+    )
+    bad.headline = "SECRETHEADLINE"
+    write_draft(items(), MockClient([bad, make_draft(250)]))
+    lines = [r.getMessage() for r in caplog.records if r.name == "daily_digest.editor"]
+    assert len(lines) == 1
+    assert "they must have 200 to 500" in lines[0]
+    assert "dropped 1 sentence(s)" in lines[0] and "speaker is not named" in lines[0]
+    assert "SECRETSENTENCE" not in caplog.text and "SECRETHEADLINE" not in caplog.text
+
+
+def test_schema_failure_reason_is_logged_without_the_reply(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    leak = '{"headline": "SENSITIVE-REPLY-TEXT", "what_you_need_to_know": 5}'
+    write_draft(items(), MockClient([leak, make_draft(250)]))
+    assert "did not match the format" in caplog.text and "SENSITIVE-REPLY-TEXT" not in caplog.text
+
+
+def test_a_clean_first_attempt_logs_nothing(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    write_draft(items(), MockClient([make_draft(250)]))
+    assert not [r for r in caplog.records if r.name == "daily_digest.editor"]
+
+
+def test_dropped_note_shows_type_and_truncated_text():
+    draft = make_draft(260)
+    long_text = "Analysts say costs will fall " + "x" * 300
+    draft.worth_a_closer_look.append(sentence("attributed_opinion", text=long_text, speaker="Nobody Known"))
+    _, notes = write_draft(items(), MockClient([draft]))
+    note = notes[0]
+    assert "(attributed_opinion)" in note and '"Analysts say costs will fall' in note
+    assert "..." in note and "x" * 250 not in note and note.endswith("speaker is not named in the cited item")
+
+
+def test_feedback_lists_at_most_ten_notes():
+    draft = make_draft(260)
+    draft.what_you_need_to_know += [sentence("factual", ids=("nope",)) for _ in range(15)]
+    draft.headline = "word " * 20
+    client = MockClient([draft, make_draft(250)])
+    write_draft(items(), client)
+    feedback = client.requests[1]["messages"][2]["content"]
+    assert feedback.count("dropped what_you_need_to_know") == 10 and "5 more sentences" in feedback
+
+
+def test_both_prompts_tell_the_model_to_attribute_by_name():
+    for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
+        assert "only when the sentence text names who holds the view" in prompt
+        assert "no named holder" in prompt
+
+
+def test_a_hostile_item_id_never_reaches_the_log(caplog):
+    caplog.set_level(logging.DEBUG, logger="daily_digest")
+    bad = make_draft(260)
+    bad.what_you_need_to_know.append(sentence("factual", ids=('it\'s "x"',)))
+    bad.headline = "word " * 20
+    write_draft(items(), MockClient([bad, make_draft(250)]))
+    assert "cites an item that was not provided" in caplog.text
+    for fragment in ("it's", 'x"', '"x'):
+        assert fragment not in caplog.text
+
+
+def test_a_very_long_item_id_is_clipped_in_the_note():
+    long_id = "z" * 5000
+    notes = notes_for("factual", ids=(long_id,))
+    assert len(notes) == 1 and len(notes[0]) < 600 and "z" * 201 not in notes[0]
