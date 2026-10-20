@@ -717,11 +717,17 @@ def test_a_clean_first_draft_has_no_first_draft_notes():
     assert write_draft(items(), MockClient([make_draft(250)]))[1] == []
 
 
-def test_only_the_writing_prompt_sets_a_word_target_but_both_ask_for_the_headline_count():
+def test_only_the_writing_prompt_sets_a_body_target_but_both_aim_the_headline_below_the_limit():
     assert "aim for 250 to 400" in SYSTEM_PROMPT  # a revision must not be invited to add text
-    assert "aim for" not in REVISE_PROMPT
+    assert "aim for 250" not in REVISE_PROMPT
     for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
-        assert "count them" in prompt
+        assert "aim for 8 to 10" in prompt and "single most important development" in prompt
+        assert "count them" not in prompt
+
+
+def test_the_prompts_ask_a_quote_sentence_to_say_what_the_quote_is_about():
+    for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
+        assert "what the quote is about, so it makes sense on its own" in prompt
 
 
 def test_suffixes_and_long_organization_names_do_not_count_as_surnames():
