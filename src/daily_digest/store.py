@@ -61,6 +61,16 @@ _MIGRATIONS = [
     PRAGMA user_version = 3;
     COMMIT;
     """,
+    """
+    BEGIN;
+    -- The feed body is gone, so an extract that ends in the ellipsis make_extract appends and is
+    -- nearly full length is the only trace of "we cut this". Short teasers were flagged already.
+    UPDATE items SET needs_extraction = 1
+    WHERE article_text IS NULL AND extraction_attempts = 0 AND extraction_attempted_at IS NULL
+      AND extract LIKE '%…' AND length(extract) >= 1000;
+    PRAGMA user_version = 4;
+    COMMIT;
+    """,
 ]
 MAX_EXTRACTION_ATTEMPTS = 3
 

@@ -88,6 +88,14 @@ _TEASER_ENDINGS = [
 
 
 def needs_extraction(feed_text: str) -> bool:
-    """True if the feed's own text is too short or reads like a teaser, so the article is worth fetching."""
+    """True if the article is worth fetching: the feed text is short, reads like a teaser,
+    or is longer than MAX_EXTRACT_CHARS (so make_extract cuts it mid-article).
+
+    Pass the full feed body, not the extract.
+    """
     text = feed_text.strip()
-    return len(text) < MIN_FEED_TEXT_CHARS or any(p.search(text) for p in _TEASER_ENDINGS)
+    return (
+        len(text) < MIN_FEED_TEXT_CHARS
+        or len(text) > MAX_EXTRACT_CHARS
+        or any(p.search(text) for p in _TEASER_ENDINGS)
+    )

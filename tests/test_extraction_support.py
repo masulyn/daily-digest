@@ -44,6 +44,31 @@ def test_rows_stored_before_extraction_existed_are_flagged_by_length(tmp_path):
         assert store.pending_extraction() == [("thin", "https://e.com/thin")]
 
 
+def test_rows_with_an_extract_we_cut_are_flagged_by_the_cut_signature(tmp_path):
+    path = tmp_path / "v3.db"
+    old = sqlite3.connect(path)
+    for script in _MIGRATIONS[:3]:  # schema as it was at version 3
+        old.executescript(script)
+    cut = "word " * 230 + "end…"
+    rows = [
+        ("cut", "https://e.com/cut", "h1", cut, None, 0, None),
+        ("tried", "https://e.com/tried", "h2", cut, None, 1, "2026-10-14T00:00:00+00:00"),
+        ("done", "https://e.com/done", "h3", cut, "full text", 0, None),
+        ("plain", "https://e.com/plain", "h4", "x" * 1100, None, 0, None),
+        ("short", "https://e.com/short", "h5", "x" * 500 + "…", None, 0, None),
+    ]
+    old.executemany(
+        "INSERT INTO items (id, source, canonical_url, content_hash, title, published_at, extract,"
+        " first_seen_at, article_text, extraction_attempts, extraction_attempted_at)"
+        " VALUES (?, 's', ?, ?, 't', '2026-10-14T12:00:00+00:00', ?, 'x', ?, ?, ?)",
+        rows,
+    )
+    old.commit()
+    old.close()
+    with Store(path) as store:
+        assert store.pending_extraction() == [("cut", "https://e.com/cut")]
+
+
 def test_saved_text_and_final_failures_leave_the_pending_list():
     store = Store(":memory:")
     store.add_if_new(sample_item("a"), needs_extraction=True)

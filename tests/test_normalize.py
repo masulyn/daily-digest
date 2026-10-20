@@ -83,3 +83,13 @@ def test_short_or_teaser_feed_text_needs_extraction(text):
 )
 def test_complete_feed_text_does_not_need_extraction(text):
     assert not needs_extraction(text)
+
+
+def _body_of(length: int) -> str:
+    return ("Complete sentence here. " * (length // 24 + 1))[: length - 1] + "."
+
+
+def test_body_longer_than_the_extract_limit_needs_extraction():
+    assert not needs_extraction(_body_of(MAX_EXTRACT_CHARS))  # not cut, nothing lost
+    assert needs_extraction(_body_of(MAX_EXTRACT_CHARS + 1))
+    assert needs_extraction(_body_of(5000))

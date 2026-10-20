@@ -118,3 +118,16 @@ def test_headline_only_items_with_the_same_title_are_not_merged():
     )
     r = ingest(make_sources("feed"), lambda url: (200, body), allow_all(), Store(":memory:"))[0]
     assert (r.stored, r.duplicates) == (2, 0)
+
+
+def test_long_feed_body_is_flagged_because_the_extract_is_cut():
+    long_body = "A complete sentence about enterprise AI adoption. " * 40  # about 2,000 characters
+    exact = ("Word " * 400)[:1200]
+    store = Store(":memory:")
+    feed = feed_xml(
+        ("Long", "https://l.example.com/long", long_body),
+        ("Exact", "https://l.example.com/exact", exact),
+    )
+    ingest(make_sources("l"), lambda url: (200, feed), allow_all(), store)
+    assert store.count() == 2
+    assert [url for _, url in store.pending_extraction()] == ["https://l.example.com/long"]

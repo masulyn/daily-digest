@@ -6,7 +6,7 @@ Turns RSS items into a cited digest. See `docs/PRD.md` (what and why) and `docs/
 
 ```
 uv run daily-digest ingest                    # read the feeds into the local database
-uv run daily-digest extract                   # fetch full text for items whose feed text is short
+uv run daily-digest extract                   # fetch full text for items whose feed text is short, teaser-like or cut at the extract limit
 uv run daily-digest draft --stub              # offline placeholder summaries; no key needed
 uv run daily-digest draft [--date YYYY-MM-DD] # one model call picks the day's items and writes the digest as Markdown
 uv run daily-digest draft --debug             # also log every model call (counts and dollars, never text or keys) to stderr
