@@ -70,6 +70,8 @@ def editor_writer(state: DigestState, client: BudgetedClient) -> dict:
     """Pick and write the digest with one model call; too few items skip the call."""
     if len(state.items) < MIN_ITEMS:
         return {"notes": [f"No significant developments: fewer than {MIN_ITEMS} items, so no model call was made"]}
+    if state.generated_at is None:
+        raise ValueError("generated_at must be set before the editor_writer node runs")
     draft, notes = write_draft(state.items, client)
     digest = build_digest(draft, state.items, state.target_date, state.generated_at, notes)
     return {"draft": draft, "digest": digest, "notes": notes}

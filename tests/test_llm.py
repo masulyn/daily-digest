@@ -24,7 +24,7 @@ from daily_digest.llm.anthropic_client import API_BASE_URL, AnthropicClient
 from daily_digest.llm.metered import cost_usd
 
 SETTINGS = load_llm_settings()
-TIGHT = SETTINGS.model_copy(update={"max_usd_per_run": Decimal("0.10")})  # the cap before the Writer was added
+TIGHT = SETTINGS.model_copy(update={"max_usd_per_run": Decimal("0.10")})  # small enough for one call to reach
 FAKE_KEY = "sk-ant-FAKE-test-key-0123456789"
 
 

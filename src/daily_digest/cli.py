@@ -172,7 +172,7 @@ def main() -> None:
     e = sub.add_parser("extract", help="fetch full article text for items whose feed text is too short")
     e.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     e.add_argument("--limit", type=int, default=None, help="maximum number of articles to fetch")
-    d = sub.add_parser("draft", help="have the Editor pick from one day's stored items (no fetching)")
+    d = sub.add_parser("draft", help="write the digest from one day's stored items with one model call (no fetching)")
     d.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
     d.add_argument(
         "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",

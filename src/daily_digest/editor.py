@@ -49,13 +49,18 @@ the system adds citations itself.
 """
 
 _STYLE_RULES = f"""\
+Direct quotes must be `quote` sentences written with double quotation marks “like this”; never use \
+other quotation marks around passages. The headline may use only facts stated in your sentences.
+
 Style: neutral, concise, executive tone for a time-poor C-level reader. No hype, marketing \
 language, emoji, or unexplained acronyms. Short paragraphs. The two sections together are \
 {MIN_BODY_WORDS} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words.
 
 No opinion, prediction, advice, evaluation, or "so what" of your own. An implication for \
 adoption leaders may appear only if a source stated it, with attribution. Keep the source's \
-hedges ("reportedly", "expects").
+hedges ("reportedly", "expects"). Never state a claim more strongly than its source does. Use no \
+promotional framing of a vendor. Where sources disagree, report each view with attribution and \
+leave the disagreement unresolved.
 
 Sentences: write each section as a list of sentences and give each one a type:
 - factual: a specific fact or statistic. List the items that support it.
@@ -97,14 +102,17 @@ revised draft.
 
 {_STYLE_RULES}"""
 
-# Schemes, www., and anything shaped like a host (known TLD, or a dotted name followed by a path).
+# Schemes and www. in any case; a lowercase host with a known ending; a dotted name that starts with
+# a letter followed by a path. Capitalized names (Character.AI, Amazon.com) and rates ($2.50/million) pass.
 _URL = re.compile(
-    r"(?i)(?:[a-z][a-z0-9+.-]*://|www\.|(?:mailto|javascript|data|file|ftp):"
-    r"|\b[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|io|ai|gov|edu|co|dev|app|info|biz|ly)\b"
-    r"|\b[\w-]+(?:\.[\w-]+)+/)"
+    r"(?i:[a-z][a-z0-9+.-]*://|www\.|(?:mailto|javascript|data|file|ftp):)"
+    r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|ai|gov|edu|co|dev|app|info|biz|ly)\b"
+    r"|(?i:\b[a-z][\w-]*(?:\.[a-z][\w-]*)+/)"
 )
 _MARKER = re.compile(r"\[\d+\]")
-_QUOTED_SPAN = re.compile(r'“([^”]+)”|"([^"]+)"')
+_LEADING_MARKDOWN = re.compile(r"^(?:[#>*+\-\s]+|\d+[.)]\s+)+")
+# Double quotes, guillemets, and low-9 quotes; single curly quotes only when they cannot be an apostrophe.
+_QUOTED_SPAN = re.compile(r'“([^”]+)”|"([^"]+)"|«([^»]+)»|„([^“”]+)[“”]|(?<!\w)‘([^’]{15,})’(?!\w)')
 _CURLY = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 
 
@@ -135,6 +143,11 @@ def has_url(text: str) -> bool:
     return bool(_URL.search(unicodedata.normalize("NFKC", text)))
 
 
+def _contains(haystack: str, needle: str) -> bool:
+    """Substring match that does not start or end inside a word."""
+    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+
+
 def normalize(text: str) -> str:
     """Straighten curly quotes and collapse whitespace; nothing else is forgiven."""
     return " ".join(text.translate(_CURLY).split())
@@ -152,6 +165,11 @@ def render_items(items: list[CandidateItem]) -> tuple[str, dict[str, SentItem]]:
             f"published: {item.published.isoformat()}\ntext: {body}\n<<<END ITEM {item_id}>>>"
         )
     return "\n\n".join(blocks), sent
+
+
+def _quoted_passages(text: str) -> list[str]:
+    spans = (normalize(next(g for g in match.groups() if g)) for match in _QUOTED_SPAN.finditer(text))
+    return [span for span in spans if len(span) >= MIN_QUOTE_CHARS]
 
 
 def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> str | None:
@@ -176,7 +194,7 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> str
             return "quote contains a URL"
         if len(quote) < MIN_QUOTE_CHARS:
             return "quote is missing or too short to verify"
-        if not any(quote in body for body in bodies):
+        if not any(_contains(body, quote) for body in bodies):
             return "quote is not in the cited item"
         if quote not in normalized_text:
             return "quote is not in the sentence"
@@ -184,25 +202,29 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> str
         speaker = normalize(sentence.speaker or "")
         if has_url(sentence.speaker or ""):
             return "speaker contains a URL"
-        if len(speaker) < MIN_SPEAKER_CHARS:
-            return "speaker is missing"
-        if not any(speaker in text_ for text_ in named_in):
+        if len(speaker) < MIN_SPEAKER_CHARS or not speaker[0].isupper():
+            return "speaker is missing or is not a name"
+        if not any(_contains(text_, speaker) for text_ in named_in):
             return "speaker is not named in the cited item"
-        if speaker not in normalized_text:
+        if not _contains(normalized_text, speaker):
             return "speaker is not named in the sentence"
     # Any quoted passage must be real, whatever type the model gave the sentence.
-    for match in _QUOTED_SPAN.finditer(text):
-        passage = normalize(match.group(1) or match.group(2))
-        if len(passage) >= MIN_QUOTE_CHARS and not any(passage in body for body in bodies):
+    for passage in _quoted_passages(text):
+        if not any(_contains(body, passage) for body in bodies):
             return "a quoted passage is not in the cited items"
     return None
+
+
+def _plain(text: str) -> str:
+    """Collapse whitespace and drop leading Markdown markers so text cannot become a heading or list."""
+    return _LEADING_MARKDOWN.sub("", " ".join(text.split()))
 
 
 def _clean(sentence: DraftSentence) -> DraftSentence:
     keeps_quote = sentence.type == "quote"
     keeps_speaker = sentence.type in ("quote", "attributed_opinion")
     return sentence.model_copy(update={
-        "text": " ".join(sentence.text.split()),
+        "text": _plain(sentence.text),
         "item_ids": [] if sentence.type == "transition" else list(dict.fromkeys(sentence.item_ids)),
         "quote": sentence.quote if keeps_quote else None,
         "speaker": sentence.speaker if keeps_speaker else None,
@@ -214,18 +236,22 @@ def check_draft(
     sent: dict[str, SentItem],
     *,
     max_sentences: tuple[int, int] | None = None,
+    section_ids: tuple[set[str], set[str]] | None = None,
 ) -> Checked:
     """Drop sentences the sent text does not support; list reasons to ask the model again.
 
-    `max_sentences` caps the two sections, so a revision can reword or remove but not add.
+    `max_sentences` caps the two sections and `section_ids` limits each section to the items it
+    already cited, so a revision can reword or remove but not add.
     """
     notes, problems = [], []
     kept: dict[str, list[DraftSentence]] = {}
-    for name in ("what_you_need_to_know", "worth_a_closer_look"):
+    for position, name in enumerate(("what_you_need_to_know", "worth_a_closer_look")):
         kept[name] = []
         for number, sentence in enumerate(getattr(draft, name), start=1):
             cleaned = _clean(sentence)
             reason = _sentence_problem(cleaned, sent)
+            if not reason and section_ids and not set(cleaned.item_ids) <= section_ids[position]:
+                reason = "cites an item this section did not cite before"
             if reason:
                 notes.append(f"dropped {name} sentence {number}: {reason}")
             else:
@@ -233,9 +259,11 @@ def check_draft(
         if not kept[name]:
             problems.append(f"{name} has no valid sentences")
 
-    headline = " ".join(draft.headline.split())
+    headline = _plain(draft.headline)
     if has_url(headline) or _MARKER.search(headline):
         problems.append("the headline contains a URL or a citation marker")
+    if _quoted_passages(headline):
+        problems.append("the headline contains a quotation; quotes belong in the sections")
     if len(headline.split()) > MAX_HEADLINE_WORDS:
         problems.append(f"the headline has {len(headline.split())} words; the limit is {MAX_HEADLINE_WORDS}")
 
@@ -264,6 +292,7 @@ def _generate(
     messages: list[dict],
     sent: dict[str, SentItem],
     max_sentences: tuple[int, int] | None = None,
+    section_ids: tuple[set[str], set[str]] | None = None,
 ) -> tuple[Draft, list[str]]:
     """Ask, check, and ask once more with the problems appended; then give up."""
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -274,7 +303,7 @@ def _generate(
         except OutputInvalidError as error:
             problems, notes, reply = [f"the reply did not match the format: {str(error)[:500]}"], [], error.raw_text
         else:
-            checked = check_draft(result.parsed, sent, max_sentences=max_sentences)
+            checked = check_draft(result.parsed, sent, max_sentences=max_sentences, section_ids=section_ids)
             if not checked.problems:
                 return checked.draft, checked.notes
             problems, notes, reply = checked.problems, checked.notes, result.parsed.model_dump_json()
@@ -294,7 +323,12 @@ def write_draft(items: list[CandidateItem], client: BudgetedClient) -> tuple[Dra
 def revise(
     draft: Draft, issues: list[DraftIssue], items: list[CandidateItem], client: BudgetedClient
 ) -> tuple[Draft, list[str]]:
-    """Reword or remove sentences to resolve `issues`. Only items the draft cited are sent."""
+    """Reword or remove sentences to resolve `issues`. Only items the draft cited are sent.
+
+    Mechanical checks keep a revision from adding sentences or citing new items. They cannot tell
+    whether rewording changed what a sentence claims; the Reviewer's entailment check does that.
+    The 200 to 500 word rule applies here too, so removing too much fails the length check.
+    """
     cited = list(dict.fromkeys(i for sentence in sentences(draft) for i in sentence.item_ids))
     by_id = {item.id: item for item in items}
     if missing := [i for i in cited if i not in by_id]:
@@ -311,4 +345,8 @@ def revise(
         f"Issues to resolve:\n{_escape(problems)}\n\nItems the draft cited:\n\n{blocks}"
     )
     limits = (len(draft.what_you_need_to_know), len(draft.worth_a_closer_look))
-    return _generate(client, REVISE_PROMPT, [{"role": "user", "content": prompt}], sent, limits)
+    cited_by_section = (
+        {i for s in draft.what_you_need_to_know for i in s.item_ids},
+        {i for s in draft.worth_a_closer_look for i in s.item_ids},
+    )
+    return _generate(client, REVISE_PROMPT, [{"role": "user", "content": prompt}], sent, limits, cited_by_section)

@@ -9,7 +9,8 @@ from .contracts import CandidateItem, CitedSource, Draft, DraftSentence, FinalDi
 WORDS_PER_MINUTE = 200
 # Only these carry a citation: facts, quotes and attributed views. Trends and transitions do not.
 CITED_TYPES = {"factual", "quote", "attributed_opinion"}
-_TRAILING_PUNCTUATION = re.compile(r"""[.!?]+["'”’)\]]*$""")
+_TRAILING_PUNCTUATION = re.compile(r"[.!?]+$")
+_CLOSING = ("”", "’", '"', "'", ")", "]", "»")
 
 
 def sentences(draft: Draft) -> list[DraftSentence]:
@@ -23,7 +24,9 @@ def word_count(draft: Draft) -> int:
 
 def _with_markers(text: str, numbers: list[int]) -> str:
     marks = "".join(f"[{n}]" for n in numbers)
-    # Before the closing punctuation, so the marker sits on the claim and not after the full stop.
+    if text.endswith(_CLOSING):
+        return f"{text}{marks}"  # outside the quotation marks, so it never reads as part of a quote
+    # Otherwise before the full stop, so the marker sits on the claim.
     match = _TRAILING_PUNCTUATION.search(text)
     return f"{text[:match.start()]}{marks}{match.group()}" if match else f"{text}{marks}"
 
@@ -76,7 +79,9 @@ def build_digest(
 
 
 def _link_text(text: str) -> str:
-    return text.replace("[", "(").replace("]", ")")
+    """Titles come from the web: one line, no brackets, no Markdown emphasis or HTML."""
+    text = " ".join(text.split()).replace("[", "(").replace("]", ")")
+    return re.sub(r"([\\*_`<>])", r"\\\1", text)
 
 
 def _link_target(url: str) -> str:
@@ -104,6 +109,6 @@ def render_markdown(digest: FinalDigest) -> str:
     for source in digest.sources:
         lines.append(
             f"{source.number}. [{_link_text(source.title)}]({_link_target(source.url)})"
-            f" — {source.source}, {source.published.date().isoformat()}"
+            f" — {_link_text(source.source)}, {source.published.date().isoformat()}"
         )
     return "\n".join(lines)

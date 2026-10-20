@@ -21,7 +21,7 @@ def test_markers_only_on_facts_quotes_and_attributed_views():
     assert first[0].startswith("Several firms are moving pilots into production.")
     assert "[" not in first[0].split(" A survey")[0]  # the trend sentence has no marker
     assert "no governance owner[1]." in first[0]
-    assert second[0].endswith("this year.”") or "[2]" in second[0]
+    assert second[0] == "Dana Reyes of the bank said, “We moved 40 pilots into production this year.”[2]"
     text = " ".join(first + second)
     assert "[1]" in text and "[2]" in text and "[3]" in text
 
@@ -49,6 +49,17 @@ def test_marker_sits_before_the_closing_punctuation_and_stacks_for_several_items
     assert digest.worth_a_closer_look == ["No stop[3]"]
 
 
+def test_the_marker_never_sits_inside_quotation_marks():
+    quoted = Draft(
+        headline=HEADLINE,
+        what_you_need_to_know=[DraftSentence(text='She said "it works."', type="factual", item_ids=["a5"])],
+        worth_a_closer_look=[DraftSentence(text="Costs rose (Reuters)", type="factual", item_ids=["a6"])],
+    )
+    digest = digest_of(quoted)
+    assert digest.what_you_need_to_know == ['She said "it works."[1]']
+    assert digest.worth_a_closer_look == ["Costs rose (Reuters)[2]"]
+
+
 def test_sentences_group_into_paragraphs_where_the_model_started_them():
     draft = make_draft(220)
     digest = digest_of(draft)
@@ -73,6 +84,16 @@ def test_markdown_has_the_prd_shape_and_only_stored_urls():
     assert [line[:4] for line in lines[-3:]] == ["1. [", "2. [", "3. ["]
     stored = {item.canonical_url for item in ITEMS}
     assert set(re.findall(r"https?://[^)\s]+", markdown)) <= stored
+
+
+def test_titles_and_source_names_stay_on_one_line_and_inert():
+    items = editor_items(DAY, "a1")
+    items[0] = items[0].model_copy(update={"title": "Line one\n2. fake *entry* `x` <b>", "source": "Wire\nService"})
+    draft = Draft(headline=HEADLINE, what_you_need_to_know=[filler(10, ("a1",))],
+                  worth_a_closer_look=[filler(10, ("a1",))])
+    sources_line = render_markdown(build_digest(draft, items, DAY, NOW, [])).splitlines()[-1]
+    assert sources_line.startswith("1. [Line one 2. fake \\*entry\\* \\`x\\` \\<b\\>](")
+    assert "— Wire Service," in sources_line
 
 
 def test_titles_cannot_break_the_link_syntax():

@@ -195,10 +195,59 @@ def test_normalize_forgives_only_quotes_and_whitespace():
     assert normalize("a-b") != normalize("a–b")
 
 
+@pytest.mark.parametrize("text", ["Prices fell to $2.50/million tokens.", "It scored 3.5/5 overall.", "Character.AI and Scale.ai grew.",
+                                  "Amazon.com and OpenAI.com reported gains.", "Rates rose 0.5/1 points.", "and/or"])
+def test_prices_ratios_and_company_names_are_not_mistaken_for_urls(text):
+    assert not has_url(text)
+
+
 @pytest.mark.parametrize("text", ["see https://evil.example", "www.evil.example", "evil.example/path", "visit evil.com",
                                   "javascript:alert(1)", "https：／／evil.example"])
 def test_url_shaped_text_is_caught_even_in_disguise(text):
     assert has_url(text)
+
+
+@pytest.mark.parametrize(
+    "marks",
+    [("«", "»"), ("„", "“"), ("‘", "’"), ("“", "”"), ('"', '"')],
+    ids=["guillemets", "low-9", "single-curly", "double-curly", "straight"],
+)
+def test_a_fabricated_passage_is_caught_in_any_kind_of_quotation_marks(marks):
+    open_, close = marks
+    notes = notes_for("factual", text=f"The bank said {open_}every pilot reached production{close} last week.")
+    assert len(notes) == 1 and "quoted passage" in notes[0]
+
+
+def test_apostrophes_are_not_mistaken_for_quotation_marks():
+    text = "The bank didn’t expect costs to fall and the board wasn’t sure either."
+    assert notes_for("factual", text=text) == []
+
+
+def test_matches_must_start_and_end_on_word_boundaries():
+    fragment = "ve moved 40 pilots into production this year."
+    assert "not in the cited item" in notes_for("quote", **good_quote(quote=fragment, text=f"Dana Reyes said, “{fragment}”"))[0]
+    lowercase = notes_for("attributed_opinion", ids=("a4",), text="the said customers asked for predictable costs.", speaker="the")
+    assert "not a name" in lowercase[0]
+
+
+def test_leading_markdown_is_stripped_and_a_quoted_headline_is_a_problem():
+    _, sent = render_items(items())
+    draft = Draft(
+        headline="# A headline",
+        what_you_need_to_know=[sentence("factual", ids=("a1",), text="- Costs fell.")],
+        worth_a_closer_look=[sentence("factual", ids=("a1",), text="1. Pilots grew.")],
+    )
+    checked = check_draft(draft, sent)
+    assert checked.draft.headline == "A headline"
+    assert checked.draft.what_you_need_to_know[0].text == "Costs fell."
+    assert checked.draft.worth_a_closer_look[0].text == "Pilots grew."
+    quoted = check_draft(draft.model_copy(update={"headline": 'He said "we have moved everything to the cloud"'}), sent)
+    assert any("headline contains a quotation" in p for p in quoted.problems)
+
+
+def test_the_prompt_asks_for_attribution_hedges_and_balance():
+    for phrase in ("more strongly than its source", "promotional framing", "disagree", "double quotation marks"):
+        assert phrase in SYSTEM_PROMPT
 
 
 # --- generating, retrying and failing --------------------------------------------------
@@ -299,6 +348,15 @@ def test_removing_a_sentence_is_accepted_while_the_checks_still_hold():
     assert len(client.requests) == 1 and len(kept.what_you_need_to_know) == 2
 
 
+def test_a_revision_may_not_move_a_citation_to_another_section():
+    original = make_draft(300)
+    revised = make_draft(300)
+    revised.worth_a_closer_look[1] = sentence("factual", ids=("a3",), text="A survey found that most firms have no governance owner.")
+    client = MockClient([revised])
+    _, notes = revise(original, [issue()], items(), client)
+    assert len(notes) == 1 and "did not cite before" in notes[0]
+
+
 def test_revise_refuses_when_a_cited_item_was_not_supplied():
     with pytest.raises(ValueError, match="not supplied"):
         revise(make_draft(250), [issue()], items("a1", "a2"), MockClient([]))
@@ -328,6 +386,13 @@ def test_fewer_than_three_items_skip_the_model():
     assert client.requests == [] and state.digest is None
     assert "No significant developments" in state.notes[0]
     assert run_digest(Store(":memory:"), DAY, client).digest is None and client.requests == []
+
+
+def test_the_node_needs_generated_at():
+    from daily_digest.graph import DigestState, editor_writer
+
+    with pytest.raises(ValueError, match="generated_at"):
+        editor_writer(DigestState(target_date=DAY, items=items()), MockClient([]))
 
 
 # --- CLI -------------------------------------------------------------------------------
