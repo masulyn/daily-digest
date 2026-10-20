@@ -26,7 +26,7 @@
   | Security test suite (prompt-injection, SSRF, XSS fixtures) | 100% pass; zero successful injections |
   | Median pipeline run duration | ≤ 15 minutes (hard cap 30 minutes) |
   | Reader access | The latest digest is one Markdown file at a predictable path (`newsletters/YYYY-MM-DD.md`), listed in `newsletters/index.md` |
-  | Cost per run | Hard cap $0.10 for the Editor-only pipeline; to be raised when the Writer and Reviewer ship (NFR-8) |
+  | Cost per run | Hard cap $0.25, degraded mode at 80% ($0.20); a typical Editor-Writer run is a few cents (NFR-8) |
   | Model portability | Changing provider and model ID in config requires no code change; the contract and security tests pass with the mock provider (NFR-11) |
 
 ## 2. Constraints & Non-Functional Requirements
@@ -50,7 +50,7 @@
 - **NFR-5 Privacy and data minimization:** No personal data about individuals is collected beyond what is in public source text (e.g., author names in citations). No telemetry leaves the machine except calls to the configured model provider and the configured feeds.
 - **NFR-6 Observability:** Every agent step logs start/end time, outcome, and token usage in structured form. Logs must never contain secrets or full raw web pages.
 - **NFR-7 Bounded duration:** A Generation Run has a soft limit of 20 minutes (degraded mode) and a hard limit of 30 minutes (FR-7.7).
-- **NFR-8 Cost control:** Budgets are in **dollars**, computed from a price table in config (USD per million input and output tokens, per model; FR-1.2). Defaults: hard cap **$0.10 per run**, checked against a worst-case estimate before every call; sanity ceilings of 40k input and 4k output tokens per call. All are configurable. The monthly cap ($20) and degraded mode at 80% are unchanged but not yet enforced. Rationale and cost estimates: DESIGN.md section 6. **[ASSUMPTION]** Prices are third-party-reported; verify against the provider's pricing page and update the price table. Cost per run is logged (NFR-6).
+- **NFR-8 Cost control:** Budgets are in **dollars**, computed from a price table in config (USD per million input and output tokens, per model; FR-1.2). Defaults: hard cap **$0.25 per run**, checked against a worst-case estimate before every call; degraded mode at 80% ($0.20); sanity ceilings of 40k input and 6k output tokens per call. All are configurable. The monthly cap ($20) and degraded mode are not yet enforced. Rationale and cost estimates: DESIGN.md section 6. **[ASSUMPTION]** Prices are third-party-reported; verify against the provider's pricing page and update the price table. Cost per run is logged (NFR-6).
 - **NFR-9 Generate endpoint safety (applies only if the P2 web UI, Feature 8, is built):** The Generate action is accepted only as a POST from the app's own pages (Origin/Host validation plus an anti-CSRF token), only on the localhost-bound server, takes no user-supplied parameters in v1 (the date is computed server-side), and is rate-limited by the single-flight lock and failure cooldown (FR-7.3).
 - **NFR-10 Truthfulness and no agent opinion (applies to Synthesizer, Reviewer, Writer, Publisher):**
   - Every sentence in a published newsletter must be supported by at least one fetched source item in that day's Candidate Set. Agents may not add facts, statistics, names, dates, causes, predictions, recommendations, judgments, or background from the model's own knowledge.
@@ -154,7 +154,7 @@
 ---
 
 ### Feature 5: Writer Agent, Final Content (Priority: P0)
-- **Description:** Turns the approved draft into the final publishable newsletter with executive tone and a citation list.
+- **Description:** Turns the approved draft into the final publishable newsletter with executive tone and a citation list. **v1 build note:** selection (Synthesizer) and first-draft writing are one model step, the Editor-Writer. The day's stored text is small (about 8k tokens for 20 items), so one call over the full text avoids lossy handoffs between a selector and a writer. Citation markers and the Sources list are added by code from stored items, not by the model.
 - **User Story:** As a C-level reader, I want a polished, scannable, credible briefing, so that I can trust it and use it immediately.
 - **Functional Requirements:**
   - FR-5.1: **Format:** Output a headline (≤ 12 words), a body of **200–500 words** (excluding headline and citations), and a **Sources** section at the bottom. The body has two labeled parts: "What you need to know" (trends) and "Worth a closer look" (distinctive viewpoints). Short paragraphs; no more than one short bullet list. **[ASSUMPTION]** Section labels can be refined by the owner.
@@ -206,7 +206,7 @@
   - FR-7.7: **Time limits:** After 20 minutes (soft limit) the Coordinator switches to **degraded mode** (skip further review rounds; use the best draft so far; the Writer finalizes; mechanical checks remain mandatory). After 30 minutes (hard limit) it terminates the run with `DEADLINE_EXCEEDED`. Both limits are configurable (FR-1.2).
   - FR-7.8: **Failure handling:** If the run fails at any stage, nothing is published, existing newsletters stay intact, the lock is released, and the run state is `failed` with a plain-language, user-safe message (no stack traces, prompts, or secrets) plus an error code in the log. The user may run `generate` again after the cooldown. No failure placeholder is published.
   - FR-7.9: **Process safety:** A run executes in the CLI process (or in a detached background process started with `--detach`). If the process is killed mid-run, on the next start any run left `in_progress` is marked `INTERRUPTED`, its partial data is discarded, and the lock is released.
-  - FR-7.10: **Budgets:** Track tokens and API calls. Before each model call, estimate the worst case (input tokens plus the maximum output tokens, at the price table); if it would cross the dollar cap or a token ceiling, stop with `BUDGET_EXCEEDED` and make no call. After each call, compute dollars from the returned usage. Retried calls count. Degraded mode at 80% is not yet implemented.
+  - FR-7.10: **Budgets:** Track tokens and API calls. Before each model call, estimate the worst case (input tokens plus the maximum output tokens, at the price table); if it would cross the dollar cap or a token ceiling, stop with `BUDGET_EXCEEDED` and make no call. After each call, compute dollars from the returned usage. Retried calls count. Degraded mode at 80% of the dollar cap is specified but not yet implemented.
   - FR-7.11: **Run summary:** At the end, write a human-readable summary (target date, trigger, feeds fetched/failed, feeds whose returned entries did not reach back to the window start (`FEED_WINDOW_TRUNCATED`), items found/kept, rounds used, word count, duration, tokens, security events) to the run log.
   - FR-7.12: **CLI:** `generate` (the entry point, trigger `cli`; prints the stage as it progresses, then the path of the new digest or a plain-language failure message), `dry-run` (full pipeline, no publish, no ledger writes), `status` (last run summary), `runs` (recent runs with status, duration, tokens, and cost), and `sources` (feed health).
 - **Acceptance Criteria (Given/When/Then):**
@@ -428,7 +428,7 @@ General: single-column, content-first, generous whitespace, readable body text a
 7. **Human trigger only:** The only human step is running `generate`. There is no approval step before publishing.
 8. **Stack:** Python 3.12+ and LangGraph; SQLite; pydantic; pytest.
 9. **Model-agnostic:** All model calls go through one interface, with Claude Sonnet as the default (NFR-11).
-10. **Cost caps in dollars** (NFR-8): $0.10 per run by default; the $20 monthly cap is not yet enforced.
+10. **Cost caps in dollars** (NFR-8): $0.25 per run by default; the $20 monthly cap is not yet enforced.
 11. **Scope:** CLI and Markdown first. The web UI (Feature 8) and admin pages (Feature 10) are P2.
 12. **Sources:** RSS only, with five tested starter feeds (FR-1.3). Reddit is out. X, Spotify, and audio sources come later.
 13. **Trend statements:** Describing patterns across sources is allowed; agent commentary and conclusions are not (NFR-10).
