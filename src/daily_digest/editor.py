@@ -65,18 +65,20 @@ count them.
 
 No opinion, prediction, advice, evaluation, or "so what" of your own. An implication for \
 adoption leaders may appear only if a source stated it, with attribution. Keep the source's \
-hedges ("reportedly", "expects"). Never state a claim more strongly than its source does. Use no \
-promotional framing of a vendor. Where sources disagree, report each view with attribution and \
-leave the disagreement unresolved.
+hedges ("reportedly", "expects") and do not add hedges the source does not use. Never state a \
+claim more strongly than its source does. Use no promotional framing of a vendor. Where sources \
+disagree, report each view with attribution and leave the disagreement unresolved.
 
 Sentences: write each section as a list of sentences and give each one a type:
 - factual: a specific fact or statistic. List the items that support it.
 - quote: a direct quote. Put the exact quoted string in `quote` (copied character for character \
 from the item, without surrounding quotation marks), put the speaker's name in `speaker`, and \
-include both in the sentence text. List the item.
+include both in the sentence text. A quote sentence names its speaker itself: do not introduce it \
+with a separate sentence that attributes it. List the item.
 - attributed_opinion: a view held by a named person or organization. Put the name in `speaker` \
-and in the sentence text. List the items. Use attributed_opinion only when the sentence text names who \
-holds the view. If a view has no named holder, state it as fact only if the item does; otherwise omit it.
+and in the sentence text. List the items. Use attributed_opinion only when the sentence text names \
+who holds the view. If a view has no named holder, state it as fact only if the item does; \
+otherwise omit it.
 - trend: a pattern that at least two independent items support together. List at least two items.
 - transition: connective text that makes no claim. List no items.
 Set starts_paragraph to true on the first sentence of each paragraph.
@@ -136,6 +138,7 @@ _CURLY = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
 class SentItem:
     title: str
     body: str
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -176,7 +179,7 @@ def render_items(items: list[CandidateItem]) -> tuple[str, dict[str, SentItem]]:
     for item in items:
         item_id, title = _escape(item.id), _escape(item.title)
         body = _escape(item.article_text or item.extract)
-        sent[item.id] = SentItem(title=title, body=body)
+        sent[item.id] = SentItem(title=title, body=body, source=_escape(item.source))
         blocks.append(
             f"<<<ITEM {item_id}>>>\nsource: {_escape(item.source)}\ntitle: {title}\n"
             f"published: {item.published.isoformat()}\ntext: {body}\n<<<END ITEM {item_id}>>>"
@@ -237,7 +240,8 @@ def _sentence_problem(sentence: DraftSentence, sent: dict[str, SentItem]) -> tup
     bodies = [normalize(item.body) for item in cited]
     named_in = [normalize(f"{item.title} {item.body}") for item in cited]
     normalized_text = normalize(text)
-    if host := _unsupported_host(text, named_in):
+    # A publisher's name ("CIO.com") is a name, not a link, so the item's source counts as cited text.
+    if host := _unsupported_host(text, [normalize(f"{item.title} {item.source} {item.body}") for item in cited]):
         return "mentions a host name that is not in the cited items", f" ({host!r})"
 
     if sentence.type == "quote":
@@ -317,7 +321,7 @@ def check_draft(
     headline = _plain(draft.headline)
     if has_url(headline) or _MARKER.search(headline):
         problems.append("the headline contains a URL or a citation marker")
-    if _unsupported_host(headline, [normalize(f"{i.title} {i.body}") for i in sent.values()]):
+    if _unsupported_host(headline, [normalize(f"{i.title} {i.source} {i.body}") for i in sent.values()]):
         problems.append("the headline mentions a host name that is not in the items")
     if _quoted_passages(headline):
         problems.append("the headline contains a quotation; quotes belong in the sections")
