@@ -1,3 +1,4 @@
+import errno
 import os
 import sqlite3
 import sys
@@ -234,9 +235,14 @@ BAD_DIGESTS = {
     "gap in the numbering": (lambda d: renumbered(d, [1, 2, 4]), "not 1 to N without gaps"),
     "url not among the items": (
         lambda d: with_source(d, 0, url="https://evil.example.com/x"), "not one of the day's items"),
+    "angle bracket in the headline": (
+        lambda d: d.model_copy(update={"headline": "Costs <fall> fast"}), "angle brackets or HTML"),
+    "reference link": (lambda d: with_paragraph(d, "See [the report][ref] now."), "Markdown link or image"),
+    "reference definition": (lambda d: with_paragraph(d, "[ref]: not-a-url"), "Markdown link or image"),
     "html in a paragraph": (lambda d: with_paragraph(d, "<script>alert(1)</script>"), "angle brackets or HTML"),
     "greater-than sign": (lambda d: with_paragraph(d, "Revenue >$3 billion."), "angle brackets or HTML"),
     "link in a paragraph": (lambda d: with_paragraph(d, "See [the report](https://x.example.com)."), "Markdown link or image"),
+    "link with a space before the label end": (lambda d: with_paragraph(d, "See [the\nreport](https://x.example.com)."), "Markdown link or image"),
     "image in a paragraph": (lambda d: with_paragraph(d, "![chart](https://x.example.com/c.png)"), "Markdown link or image"),
     "link in the headline": (
         lambda d: d.model_copy(update={"headline": "Read [this](https://x.example.com) now"}), "Markdown link or image"),
@@ -289,13 +295,13 @@ def test_a_failure_between_the_temporary_write_and_the_move_leaves_nothing(monke
 
     def failing(src, dst, *args, **kwargs):
         if str(dst).endswith(".md"):
-            raise OSError("disk full")
+            raise OSError(errno.ENOSPC, "disk full")
         return real_link(src, dst, *args, **kwargs)
 
     monkeypatch.setattr(os, "link", failing)
     script(monkeypatch, [make_draft(300), APPROVE])
     assert generate(monkeypatch, env) == 1
-    assert "could not be saved" in capsys.readouterr().err
+    assert "could not be saved (No space left on device)" in capsys.readouterr().err
     assert files(out) == [] and seen_rows(db) == 0  # no .md, no .json, no temporary file, no index
 
 
@@ -425,3 +431,90 @@ def test_the_debug_log_carries_no_text_or_key_from_a_generate_run(monkeypatch, e
 def test_newsletters_are_git_ignored():
     root = Path(__file__).resolve().parents[1]
     assert "newsletters/" in (root / ".gitignore").read_text().splitlines()
+
+
+# --- review round 1: races, links, escaping, modes -------------------------------------
+
+def test_a_winner_keeps_its_json_when_it_replaced_the_losers_copy_during_the_race(tmp_path, monkeypatch):
+    out = tmp_path / "n"
+    winner, loser = published_for(DAY, "Winner headline"), published_for(DAY, "Loser headline")
+    real_link, state = os.link, {"raced": False}
+
+    def interleave(src, dst, *args, **kwargs):
+        if str(dst).endswith(".md") and not state["raced"]:
+            state["raced"] = True
+            save_digest(out, winner)  # the other run completes its whole save inside this run's window
+        return real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", interleave)
+    with pytest.raises(AlreadyExists):
+        save_digest(out, loser)
+    assert files(out) == ["2026-10-14.json", "2026-10-14.md"]
+    assert "Winner headline" in (out / "2026-10-14.md").read_text()
+    assert PublishedDigest.model_validate_json((out / "2026-10-14.json").read_text()).digest.headline == "Winner headline"
+
+
+def test_a_json_a_run_took_over_is_not_deleted_when_it_loses_the_markdown_race(tmp_path, monkeypatch):
+    out = tmp_path / "n"
+    out.mkdir()
+    (out / "2026-10-14.json").write_text("{stale")
+    real_link = os.link
+
+    def racing(src, dst, *args, **kwargs):
+        if str(dst).endswith(".md"):
+            Path(dst).write_text("THE OTHER RUN")
+        return real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", racing)
+    with pytest.raises(AlreadyExists):
+        save_digest(out, published_for(DAY))
+    assert files(out) == ["2026-10-14.json", "2026-10-14.md"]  # the JSON stays: it was not this run's to delete
+
+
+def test_a_sources_link_must_be_http_or_https_even_if_the_feed_supplied_it():
+    state = good_state()
+    first_url = state.digest.sources[0].url
+    items = [i.model_copy(update={"canonical_url": "javascript:alert(1)"}) if i.canonical_url == first_url else i
+             for i in state.items]
+    digest = state.digest.model_copy(update={"sources": [
+        state.digest.sources[0].model_copy(update={"url": "javascript:alert(1)"}), *state.digest.sources[1:]]})
+    problems = validate_digest(digest, items)
+    assert problems == ["a Sources URL is not an http or https link"]
+
+
+def test_plain_brackets_and_stacked_markers_are_not_mistaken_for_links():
+    state = good_state()
+    digest = with_paragraph(state.digest, "A source said “[T]he firm grew” and costs fell[1][2].")
+    assert "Markdown link or image" not in " ".join(validate_digest(digest, state.items))
+
+
+def test_characters_that_could_break_a_sources_link_are_percent_encoded():
+    state = good_state()
+    weird = "https://news.example.com/a`b<c>d\\e(f)"
+    digest = state.digest.model_copy(update={"sources": [
+        state.digest.sources[0].model_copy(update={"url": weird}), *state.digest.sources[1:]]})
+    line = [l for l in render_markdown(digest).splitlines() if l.startswith("1. [")][0]
+    assert "(https://news.example.com/a%60b%3Cc%3Ed%5Ce%28f%29)" in line
+
+
+def test_the_index_escapes_the_headline_and_the_preview(tmp_path):
+    out = tmp_path / "n"
+    published = published_for(DAY, headline="Costs [rise] (fast)")
+    digest = published.digest.model_copy(update={"what_you_need_to_know": ["Costs **rose** in `AI` [see] <b>."]})
+    save_digest(out, published.model_copy(update={"digest": digest}))
+    rebuild_index(out)
+    lines = (out / "index.md").read_text().splitlines()
+    assert "- **2026-10-14** · [Costs (rise) (fast)](2026-10-14.md) · 2 min read" in lines
+    assert "  Costs \\*\\*rose\\*\\* in \\`AI\\` (see) \\<b\\>." in lines
+
+
+def test_saved_files_follow_the_process_umask(tmp_path):
+    previous = os.umask(0o077)
+    try:
+        save_digest(tmp_path / "private", published_for(DAY))
+        os.umask(0o022)
+        save_digest(tmp_path / "shared", published_for(DAY))
+    finally:
+        os.umask(previous)
+    assert (tmp_path / "private" / "2026-10-14.md").stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "shared" / "2026-10-14.md").stat().st_mode & 0o777 == 0o644

@@ -87,7 +87,9 @@ def link_text(text: str) -> str:
 
 
 def _link_target(url: str) -> str:
-    return url.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
+    for char, code in (("(", "%28"), (")", "%29"), (" ", "%20"), ("<", "%3C"), (">", "%3E"), ("`", "%60"), ("\\", "%5C")):
+        url = url.replace(char, code)
+    return url
 
 
 def review_text(review: ReviewSummary) -> str:

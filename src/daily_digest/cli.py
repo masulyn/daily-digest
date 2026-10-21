@@ -245,8 +245,12 @@ def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient,
         except AlreadyExists as exists:
             print(_printable(f"ALREADY_EXISTS: {exists.path}"))
             return 0
-        except OSError:
-            print("error: the digest could not be saved; nothing was written and no items were marked seen", file=sys.stderr)
+        except OSError as error:
+            reason = os.strerror(error.errno) if error.errno else "I/O error"
+            print(
+                f"error: the digest could not be saved ({reason}); nothing was written and no items were marked seen",
+                file=sys.stderr,
+            )
             return 1
         index_notes = _refresh_index(out_dir)
         try:

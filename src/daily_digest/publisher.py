@@ -22,7 +22,9 @@ INDEX_NAME = "index.md"
 PREVIEW_CHARS = 160
 
 _MARKER = re.compile(r"\[(\d+)\]")
-_LINK_OR_IMAGE = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
+# Inline links and images (`](`), reference links (`][x`, but not stacked markers like `[1][2]`) and
+# reference definitions (`[x]: dest` opening a line). Plain brackets, as in a quote's "[T]he", are fine.
+_LINK_OR_IMAGE = re.compile(r"\]\(|\]\[(?!\d+\])|^\s*\[[^\]\n]*\]:", re.M)
 _DIGEST_JSON = re.compile(r"^\d{4}-\d{2}-\d{2}\.json$")
 
 
@@ -55,6 +57,8 @@ def validate_digest(digest: FinalDigest, items: list[CandidateItem]) -> list[str
     known_urls = {item.canonical_url for item in items}
     if any(source.url not in known_urls for source in digest.sources):
         problems.append("a Sources URL is not one of the day's items")
+    if not all(source.url.startswith(("http://", "https://")) for source in digest.sources):
+        problems.append("a Sources URL is not an http or https link")
     one_line = lambda text: len(text.splitlines()) == 1  # noqa: E731 - also rejects the empty string
     if not all(one_line(source.title) and one_line(source.source) for source in digest.sources):
         problems.append("a Sources title or name is not a single line")
@@ -88,8 +92,14 @@ def _write_temp(directory: Path, name: str, text: str) -> Path:
         handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
-    os.chmod(temp, 0o644)
+    os.chmod(temp, 0o666 & ~_umask())
     return Path(temp)
+
+
+def _umask() -> int:
+    current = os.umask(0)
+    os.umask(current)
+    return current
 
 
 def _fsync_directory(directory: Path) -> None:
@@ -105,44 +115,60 @@ def _fsync_directory(directory: Path) -> None:
         os.close(descriptor)
 
 
-def _place_json(temp: Path, target: Path, markdown: Path) -> bool:
-    """Put the JSON in place. True if this run created (or took over) the file."""
+def _place_json(temp: Path, target: Path, markdown: Path) -> str:
+    """Put the JSON in place: "linked" if this run created the file, "took_over" if it replaced a stale one."""
     try:
         os.link(temp, target)
-        return True
+        return "linked"
     except FileExistsError:
         if markdown.exists():
             raise AlreadyExists(markdown) from None
         # A JSON with no Markdown beside it is left over from a run that died before finishing.
         os.replace(temp, target)
-        return True
+        return "took_over"
+
+
+def _is_same_file(path: Path, expected: os.stat_result) -> bool:
+    try:
+        found = os.stat(path)
+    except OSError:
+        return False
+    return (found.st_dev, found.st_ino) == (expected.st_dev, expected.st_ino)
 
 
 def save_digest(out_dir: Path, published: PublishedDigest) -> Path:
     """Write the JSON and then the Markdown, never replacing an existing Markdown.
 
     Raises AlreadyExists when a digest for the date is there, including one that appeared while this
-    run was working. Whatever happens, no partial digest and no temporary file is left behind.
+    run was working. Whatever happens, no partial digest and no temporary file is left behind. A run
+    that fails removes the JSON only if it created that file and it is still the very file it wrote:
+    another run may have replaced it, and the winner's JSON must survive.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = published.digest.covered_date.isoformat()
     markdown, json_file = out_dir / f"{stem}.md", out_dir / f"{stem}.json"
     temps: list[Path] = []
-    created_json = False
+    created: os.stat_result | None = None  # the JSON as this run linked it, if this run created it
+
+    def remove_own_json() -> None:
+        if created is not None and _is_same_file(json_file, created):
+            json_file.unlink(missing_ok=True)
+
     try:
         json_temp = _write_temp(out_dir, json_file.name, published.model_dump_json(indent=2) + "\n")
         temps.append(json_temp)
         markdown_temp = _write_temp(out_dir, markdown.name, markdown_for(published.digest))
         temps.append(markdown_temp)
-        created_json = _place_json(json_temp, json_file, markdown)
+        written = os.stat(json_temp)
+        if _place_json(json_temp, json_file, markdown) == "linked":
+            created = written
+        _fsync_directory(out_dir)  # the JSON is on disk before the Markdown makes the digest exist
         os.link(markdown_temp, markdown)  # fails if the file exists, so two runs cannot replace each other
     except (AlreadyExists, FileExistsError):
-        if created_json:
-            json_file.unlink(missing_ok=True)
+        remove_own_json()
         raise AlreadyExists(markdown) from None
     except BaseException:
-        if created_json:
-            json_file.unlink(missing_ok=True)
+        remove_own_json()
         raise
     finally:
         for temp in temps:
@@ -157,7 +183,8 @@ def _preview(digest: FinalDigest) -> str:
         return ""
     text = " ".join(_MARKER.sub("", digest.what_you_need_to_know[0]).split())
     text = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
-    return text if len(text) <= PREVIEW_CHARS else text[: PREVIEW_CHARS - 1].rstrip() + "…"
+    text = text if len(text) <= PREVIEW_CHARS else text[: PREVIEW_CHARS - 1].rstrip() + "…"
+    return link_text(text)
 
 
 def rebuild_index(out_dir: Path) -> list[str]:
