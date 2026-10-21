@@ -231,6 +231,11 @@ def _prune(draft: Draft, issues: list[ReviewIssue]) -> tuple[Draft, int]:
     return Draft(headline=draft.headline, **kept), removed
 
 
+def _headline_blockers(issues: list[ReviewIssue]) -> list[ReviewIssue]:
+    """Blocking issues on the headline: removing a sentence cannot clear them, and it must not be published as written."""
+    return [i for i in issues if i.severity == "blocking" and i.section == "headline"]
+
+
 def _fallback(
     draft: Draft, issues: list[ReviewIssue], sent: dict[str, SentItem], status: str, rounds: int, notes: list[str]
 ) -> ReviewOutcome:
@@ -240,9 +245,13 @@ def _fallback(
     advisory = [_issue_text(draft, i) for i in issues if i.severity == "advisory"]
     pruned, removed = _prune(draft, issues)
     checked = check_draft(pruned, sent)
-    if checked.problems:
+    problems = [
+        *(f"{_issue_text(draft, i)} cannot be fixed by removing a sentence" for i in _headline_blockers(issues)),
+        *checked.problems,
+    ]
+    if problems:
         summary = ReviewSummary(status="failed", rounds=rounds, unresolved=unresolved, advisory=advisory)
-        return ReviewOutcome(None, summary, [*notes, *[f"could not repair the draft: {p}" for p in checked.problems]])
+        return ReviewOutcome(None, summary, [*notes, *[f"could not repair the draft: {p}" for p in problems]])
     summary = ReviewSummary(
         status=status, rounds=rounds, removed=removed, unresolved=unresolved, advisory=advisory
     )
