@@ -588,7 +588,7 @@ def test_run_stops_with_a_retriable_error_when_no_feed_could_be_read(monkeypatch
     assert run_cli(monkeypatch, env) == 1
     assert stages == ["ingest"] and len(queue) == 2 and files(env[1]) == []
     err = capsys.readouterr().err
-    assert "may be temporary" in err and "run the same command again" in err and "nothing was saved" in err.lower()
+    assert "may be temporary" in err and "run the same command again" in err and "no digest was saved" in err.lower()
 
 
 def test_run_says_so_when_retrying_will_not_help(monkeypatch, env, stages, capsys):
@@ -649,19 +649,24 @@ def test_run_passes_generates_exit_code_through(monkeypatch, env, stages):
     assert files(env[1]) == []
 
 
-@pytest.mark.parametrize(
-    "reply, advice",
-    [
-        (httpx2.Response(401, json={"error": {"message": "no"}}), "Retrying will not help until the cause is fixed"),
-        (httpx2.Response(400, json={"error": {"message": "no"}}), "Retrying will not help until the cause is fixed"),
-    ],
-)
-def test_a_permanent_model_error_says_a_retry_will_not_help(monkeypatch, env, capsys, reply, advice):
-    script(monkeypatch, [reply])
+@pytest.mark.parametrize("status", [400, 401])
+def test_a_permanent_model_error_says_a_retry_will_not_help(monkeypatch, env, capsys, status):
+    script(monkeypatch, [httpx2.Response(status, json={"error": {"message": "no"}})])
     assert generate(monkeypatch, env) == 1
     err = capsys.readouterr().err
-    assert "the model API returned HTTP" in err and advice in err and "Nothing was saved." in err
-    assert files(env[1]) == []
+    assert f"the model API returned HTTP {status}" in err and "Retrying will not help until the cause is fixed" in err
+    assert "No digest was saved." in err and files(env[1]) == []
+
+
+def test_a_budget_stop_says_a_retry_hits_the_same_cap(monkeypatch, env, capsys):
+    from decimal import Decimal
+
+    settings = cli.load_llm_settings(cli.DEFAULT_SETTINGS_PATH).model_copy(update={"max_usd_per_run": Decimal("0.001")})
+    monkeypatch.setattr(cli, "load_llm_settings", lambda path: settings)
+    script(monkeypatch, [make_draft(300)])
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "budget exceeded" in err and "same cap" in err and files(env[1]) == []
 
 
 def test_a_transient_model_error_that_outlasts_the_retries_says_it_may_be_temporary(monkeypatch, env, capsys):
@@ -678,3 +683,57 @@ def test_a_draft_the_model_gets_wrong_twice_says_a_retry_may_work(monkeypatch, e
     assert generate(monkeypatch, env) == 1
     err = capsys.readouterr().err
     assert "A retry may work" in err and "spends another run's budget" in err
+
+
+class FakeFetcher:
+    """Serves one good feed and one that answers 503 until `down` is emptied; robots.txt is absent."""
+
+    down = {"flaky"}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def set_host_delay(self, host, seconds):
+        pass
+
+    def fetch(self, url):
+        if url.endswith("/robots.txt"):
+            return 404, b""
+        if any(name in url for name in self.down):
+            return 503, b""
+        return 200, FEED
+
+
+FEED = (
+    '<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>'
+    "<item><title>Fresh item</title><link>https://good.example.com/fresh</link>"
+    "<pubDate>Wed, 14 Oct 2026 14:00:00 GMT</pubDate><description>A fresh thing happened.</description></item>"
+    "</channel></rss>"
+).encode()
+
+
+def test_a_flaky_feed_stops_run_and_the_retry_for_the_same_day_saves_without_duplicates(monkeypatch, env, tmp_path):
+    feeds = tmp_path / "feeds.toml"
+    feeds.write_text(
+        '[[feeds]]\nname = "Good"\nurl = "https://good.example.com/feed"\ncategory = "t"\n'
+        '[[feeds]]\nname = "Flaky"\nurl = "https://flaky.example.com/feed"\ncategory = "t"\n'
+    )
+    monkeypatch.setattr(cli, "HttpFetcher", FakeFetcher)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: 0)
+    FakeFetcher.down = {"flaky"}
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env, "--feeds", str(feeds)) == 1
+    assert files(env[1]) == [] and seen_rows(env[0]) == 0
+    with Store(env[0]) as store:
+        stored = store.count()
+    FakeFetcher.down = set()
+    assert run_cli(monkeypatch, env, "--feeds", str(feeds)) == 0
+    assert "2026-10-14.md" in files(env[1])
+    with Store(env[0]) as store:
+        assert store.count() == stored  # the good feed's item was not stored twice

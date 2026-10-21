@@ -218,14 +218,14 @@ def run_generate(
 
 
 def _retry_advice(error: Exception) -> str:
-    """Whether running the command again can help, and what it may cost. Nothing was saved either way."""
+    """Whether running the command again can help, and what it may cost. No digest is saved either way."""
     if isinstance(error, TransientLLMError):
-        return "This may be temporary: run the same command again. Nothing was saved; the usage line shows what this run spent."
+        return "This may be temporary: run the same command again. No digest was saved; the usage line shows what this run spent."
     if isinstance(error, (OutputInvalidError, WriterFailed)):
-        return "A retry may work, since the model's output varies, but it spends another run's budget. Nothing was saved."
+        return "A retry may work, since the model's output varies, but it spends another run's budget. No digest was saved."
     if isinstance(error, BudgetExceeded):
-        return "A retry will hit the same cap unless the settings or the day's items change. Nothing was saved."
-    return "Retrying will not help until the cause is fixed (key, settings or request). Nothing was saved."
+        return "A retry will hit the same cap unless the settings or the day's items change. No digest was saved."
+    return "Retrying will not help until the cause is fixed (key, settings or request). No digest was saved."
 
 
 def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool) -> int:
@@ -309,7 +309,7 @@ def _feed_stop(reports: list[FeedReport]) -> tuple[str, int] | None:
     if passing:
         text = (
             f"error: {len(passing)} of {len(reports)} feeds could not be read: {_named(passing)}. "
-            "This may be temporary: run the same command again. Nothing was saved and no model was "
+            "This may be temporary: run the same command again. No digest was saved and no model was "
             "called, so a retry for the same day starts clean."
         )
         if lasting:
@@ -318,7 +318,7 @@ def _feed_stop(reports: list[FeedReport]) -> tuple[str, int] | None:
     if len(lasting) == len(reports):
         return (
             f"error: no feed could be read, and retrying will not fix: {_named(lasting)}. "
-            "Change the feed list or the feeds themselves. Nothing was saved and no model was called.",
+            "Change the feed list or the feeds themselves. No digest was saved and no model was called.",
             2,
         )
     return None
