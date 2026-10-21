@@ -528,3 +528,69 @@ def test_the_escaped_preview_still_fits_in_160_characters(tmp_path):
     rebuild_index(out)
     preview = [l for l in (out / "index.md").read_text().splitlines() if l.startswith("  ")][0].strip()
     assert len(preview) <= 160 and preview.endswith("…") and not preview.endswith("\\…")
+
+
+# --- run: the whole pipeline in one command ------------------------------------------------
+
+def run_cli(monkeypatch, env, *extra, day: date = DAY) -> int:
+    db, out = env
+    monkeypatch.setattr(
+        sys, "argv", ["daily-digest", "run", "--db", str(db), "--out-dir", str(out), "--date", day.isoformat(), *extra]
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    return exit_info.value.code
+
+
+@pytest.fixture
+def stages(monkeypatch):
+    """Record the stages `run` starts; ingest and extract succeed without touching the network."""
+    calls = []
+    monkeypatch.setattr(cli, "run_ingest", lambda db, feeds: calls.append("ingest") or 0)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: calls.append(f"extract:{days}") or 0)
+    return calls
+
+
+def test_run_does_ingest_then_extract_then_generate(monkeypatch, env, stages):
+    out = env[1]
+    script(monkeypatch, [make_draft(300), APPROVE])
+    today = date.today()
+    assert run_cli(monkeypatch, env, day=DAY) == 0
+    assert stages == ["ingest", f"extract:{(today - DAY).days + 1}"]  # the window reaches back to the digest day
+    assert files(out) == ["2026-10-14.json", "2026-10-14.md", "index.md"]
+
+
+def test_run_for_an_existing_digest_does_nothing_at_all(monkeypatch, env, stages, capsys):
+    out = env[1]
+    out.mkdir()
+    (out / "2026-10-14.md").write_text("done")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert run_cli(monkeypatch, env) == 0
+    assert stages == [] and capsys.readouterr().out.startswith("ALREADY_EXISTS:")
+
+
+def test_run_without_a_key_fetches_nothing(monkeypatch, env, stages):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert run_cli(monkeypatch, env) == 2
+    assert stages == []
+
+
+def test_run_stops_before_extract_and_the_model_when_no_feed_could_be_read(monkeypatch, env, stages, capsys):
+    monkeypatch.setattr(cli, "run_ingest", lambda db, feeds: stages.append("ingest") or 1)
+    queue = script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 1
+    assert stages == ["ingest"] and len(queue) == 2 and files(env[1]) == []
+    assert "no feed could be read" in capsys.readouterr().err
+
+
+def test_run_goes_on_without_article_text_when_extract_fails(monkeypatch, env, stages, capsys):
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: stages.append("extract") or 1)
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 0
+    assert "feed text only" in capsys.readouterr().err and files(env[1]) == ["2026-10-14.json", "2026-10-14.md", "index.md"]
+
+
+def test_run_passes_generates_exit_code_through(monkeypatch, env, stages):
+    script(monkeypatch, [make_draft(300)])
+    assert run_cli(monkeypatch, env, "--no-review") == 3
+    assert files(env[1]) == []

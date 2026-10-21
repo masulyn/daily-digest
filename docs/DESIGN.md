@@ -6,7 +6,7 @@
 
 ## 1. Overview and stack decisions
 
-Daily Digest is a local Python application. A human runs `generate`; a Coordinator runs a multi-agent pipeline (Researcher, Synthesizer, Reviewer, Writer, Publisher) that turns the previous day's RSS items into one cited, source-grounded Markdown digest for enterprise AI leaders.
+Daily Digest is a local Python application. A human runs `run` (ingest, extract, then `generate`; `generate` alone starts at the stored items); a Coordinator runs a multi-agent pipeline (Researcher, Synthesizer, Reviewer, Writer, Publisher) that turns the previous day's RSS items into one cited, source-grounded Markdown digest for enterprise AI leaders.
 
 | Decision | Choice | Why |
 |---|---|---|

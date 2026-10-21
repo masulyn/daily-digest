@@ -269,6 +269,28 @@ def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient,
     return 0
 
 
+def run_pipeline(
+    db_path: Path, feeds_path: Path, out_dir: Path, target: date, client: MeteredClient,
+    review_enabled: bool = True,
+) -> int:
+    """The whole daily job in order: ingest, extract, then generate. Stops at the first stage that cannot go on.
+
+    A feed run that stored nothing at all stops the job before any page fetch or model spend (exit 1).
+    A failed extract only costs the digest its full text, so the job goes on. The exit code is
+    generate's.
+    """
+    print("== ingest ==")
+    if run_ingest(db_path, feeds_path) != 0:
+        print("error: no feed could be read; stopping before any model call", file=sys.stderr)
+        return 1
+    print("\n== extract ==")
+    days = (date.today() - target).days + 1  # reaches back to the digest day
+    if run_extract(db_path, None, days) != 0:
+        print("warning: no article text could be fetched; the digest uses feed text only", file=sys.stderr)
+    print("\n== generate ==")
+    return run_generate(db_path, out_dir, target, client, review_enabled)
+
+
 def _refresh_index(out_dir: Path) -> list[str]:
     try:
         return rebuild_index(out_dir)
@@ -340,24 +362,40 @@ def main() -> None:
         "--no-review", action="store_true",
         help="skip the Reviewer; nothing is saved and the exit code is 3 (to test the pipeline cheaply)",
     )
+    r = sub.add_parser(
+        "run", help="the whole daily job: ingest, extract, then generate yesterday's digest (one command)"
+    )
+    r.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
+    r.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML)")
+    r.add_argument("--out-dir", type=Path, default=None, help="where digests go (default: newsletters/ in the project)")
+    r.add_argument(
+        "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",
+        help="digest day, local time, earlier than today (default: yesterday)",
+    )
+    r.add_argument("--debug", action="store_true", help="log every model call and review round to stderr")
+    r.add_argument(
+        "--no-review", action="store_true",
+        help="skip the Reviewer; nothing is saved and the exit code is 3 (to test the pipeline cheaply)",
+    )
     args = parser.parse_args()
-    if args.command == "generate":
+    if args.command in ("generate", "run"):
         target = args.date or date.today() - timedelta(days=1)
         if target >= date.today():
             print("error: --date must be earlier than today", file=sys.stderr)
             raise SystemExit(2)
         out_dir = args.out_dir or DEFAULT_NEWSLETTERS_DIR
         existing = digest_path(out_dir, target)
-        if existing.exists():  # before any key check or model spend
+        if existing.exists():  # before any fetch, key check or model spend
             print(_printable(f"ALREADY_EXISTS: {existing}"))
             raise SystemExit(0)
-        client = _build_client(DEFAULT_SETTINGS_PATH)
+        client = _build_client(DEFAULT_SETTINGS_PATH)  # a missing key stops `run` before it fetches anything
         if client is None:
             raise SystemExit(2)
+        db_path = args.db or data_dir() / "digest.db"
         with _debug_logging(args.debug):
-            raise SystemExit(
-                run_generate(args.db or data_dir() / "digest.db", out_dir, target, client, not args.no_review)
-            )
+            if args.command == "run":
+                raise SystemExit(run_pipeline(db_path, args.feeds, out_dir, target, client, not args.no_review))
+            raise SystemExit(run_generate(db_path, out_dir, target, client, not args.no_review))
     if args.command == "draft":
         target = args.date or date.today() - timedelta(days=1)
         client = None
