@@ -245,8 +245,12 @@ def _fallback(
     advisory = [_issue_text(draft, i) for i in issues if i.severity == "advisory"]
     pruned, removed = _prune(draft, issues)
     checked = check_draft(pruned, sent)
+    headline_covered = any("headline" in p for p in checked.problems)  # a mechanical headline issue
     problems = [
-        *(f"{_issue_text(draft, i)} cannot be fixed by removing a sentence" for i in _headline_blockers(issues)),
+        *(
+            f"{_issue_text(draft, i)} cannot be fixed by removing a sentence"
+            for i in ([] if headline_covered else _headline_blockers(issues))
+        ),
         *checked.problems,
     ]
     if problems:

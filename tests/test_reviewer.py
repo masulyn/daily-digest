@@ -264,6 +264,12 @@ def test_budget_exceeded_in_round_two_gives_the_same_outcome():
     assert len(client.requests) == 3 and outcome.summary.removed == 1
 
 
+def test_a_headline_issue_still_fails_the_draft_when_the_budget_ends_the_loop():
+    headline_issue = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Soften it.")
+    outcome, _ = run([ReviewResult(issues=[headline_issue]), BudgetExceeded("x")])
+    assert outcome.summary.status == "failed" and outcome.draft is None
+
+
 def test_budget_exceeded_in_the_revision_also_degrades():
     outcome, _ = run([blocked(), BudgetExceeded("x")])
     assert outcome.summary.status == "degraded" and outcome.summary.rounds == 1
@@ -429,12 +435,12 @@ def test_an_over_long_required_change_is_clipped_not_fatal():
 def test_a_mechanical_headline_problem_cannot_be_removed_so_the_draft_fails():
     outcome, _ = run([approve()], draft=make_draft(300, headline=" ".join(["word"] * 13)), rounds=1)
     assert outcome.summary.status == "failed" and outcome.draft is None
-    assert any("headline has 13 words" in n for n in outcome.notes)
+    assert [n for n in outcome.notes if "13 words" in n] == ["could not repair the draft: the headline has 13 words; the limit is 12"]
 
 
 def test_an_unresolved_blocking_headline_issue_fails_the_draft_instead_of_publishing_the_headline():
     headline_issue = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Soften it.")
-    outcome, client = run([ReviewResult(issues=[headline_issue])], rounds=1)
+    outcome, _ = run([ReviewResult(issues=[headline_issue])], rounds=1)
     assert outcome.summary.status == "failed" and outcome.draft is None
     assert outcome.summary.unresolved == ["headline (overstated): Soften it."]
     assert any("headline (overstated): Soften it. cannot be fixed by removing a sentence" in n for n in outcome.notes)
