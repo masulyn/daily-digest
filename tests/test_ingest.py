@@ -88,6 +88,26 @@ def test_robots_disallowed_feed_is_not_fetched():
     assert not any(u.endswith("/feed") for u in called)
 
 
+def test_a_robots_txt_that_cannot_be_read_is_a_passing_problem_not_a_disallow():
+    def fetch(url: str):
+        if url.endswith("/robots.txt"):
+            raise FetchError(ErrorCode.FEED_UNREACHABLE, "timeout")
+        return 200, FIXTURE
+
+    reports = ingest(make_sources("down"), fetch, RobotsChecker(fetch, "test"), Store(":memory:"))
+    assert reports[0].error == ErrorCode.FEED_UNREACHABLE
+
+
+def test_a_robots_txt_server_error_is_a_passing_problem_but_a_404_is_not_a_problem():
+    def serve(robots_status: int):
+        return lambda url: (robots_status, b"") if url.endswith("/robots.txt") else (200, FIXTURE)
+
+    down = serve(503)
+    assert ingest(make_sources("a"), down, RobotsChecker(down, "t"), Store(":memory:"))[0].error == ErrorCode.FEED_UNREACHABLE
+    absent = serve(404)
+    assert ingest(make_sources("a"), absent, RobotsChecker(absent, "t"), Store(":memory:"))[0].error is None
+
+
 def test_invalid_feed_is_reported():
     reports = ingest(make_sources("junk"), lambda url: (200, b"not a feed at all"), allow_all(), Store(":memory:"))
     assert reports[0].error == ErrorCode.FEED_INVALID

@@ -21,14 +21,14 @@ from .config import (
     load_llm_settings,
     load_sources,
 )
-from .contracts import PublishedDigest, ReviewSummary, UsageRecord
+from .contracts import ErrorCode, PublishedDigest, ReviewSummary, UsageRecord
 from .digest import render_markdown, review_text
 from .editor import WriterFailed
 from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
 from .graph import DigestState, day_window, run_digest
-from .ingest import ingest
-from .llm import LLMClient, LLMError, MeteredClient
+from .ingest import FeedReport, ingest
+from .llm import BudgetExceeded, LLMClient, LLMError, MeteredClient, OutputInvalidError, TransientLLMError
 from .publisher import AlreadyExists, digest_path, provenance_for, rebuild_index, save_digest, validate_digest
 from .robots import RobotsChecker
 from .store import DatabaseNotFound, Store
@@ -51,7 +51,7 @@ def _open_existing(db_path: Path) -> Store | None:
         return None
 
 
-def run_ingest(db_path: Path, feeds_path: Path) -> int:
+def _ingest_reports(db_path: Path, feeds_path: Path) -> list[FeedReport]:
     _warn_if_no_contact()
     sources = load_sources(feeds_path)
     with HttpFetcher() as fetcher, Store(db_path) as store:
@@ -61,6 +61,11 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
         for r in reports:
             print(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7}  {r.error or ''}")
         print(f"\nItems in database: {store.count()}  ({db_path})")
+    return reports
+
+
+def run_ingest(db_path: Path, feeds_path: Path) -> int:
+    reports = _ingest_reports(db_path, feeds_path)
     # Partial failures are reported in the table; only fail when nothing was ingested.
     return 0 if any(r.error is None for r in reports) else 1
 
@@ -206,10 +211,21 @@ def run_generate(
     try:
         return _generate(db_path, out_dir, target, client, review_enabled)
     except (LLMError, WriterFailed) as error:
-        print(f"error: {_printable(str(error))}", file=sys.stderr)
+        print(f"error: {_printable(str(error))}. {_retry_advice(error)}", file=sys.stderr)
         return 1
     finally:
         print(client.usage_line())
+
+
+def _retry_advice(error: Exception) -> str:
+    """Whether running the command again can help, and what it may cost. No digest is saved either way."""
+    if isinstance(error, TransientLLMError):
+        return "This may be temporary: run the same command again. No digest was saved; the usage line shows what this run spent."
+    if isinstance(error, (OutputInvalidError, WriterFailed)):
+        return "A retry may work, since the model's output varies, but it spends another run's budget. No digest was saved."
+    if isinstance(error, BudgetExceeded):
+        return "A retry will hit the same cap unless the settings or the day's items change. No digest was saved."
+    return "Retrying will not help until the cause is fixed (key, settings or request). No digest was saved."
 
 
 def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool) -> int:
@@ -267,6 +283,72 @@ def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient,
     for note in index_notes:
         print(_printable(note))
     return 0
+
+
+# A non-200 answer is reported as FEED_UNREACHABLE too, so a permanently dead URL also counts as
+# retriable; the messages say "may".
+RETRIABLE_FEED_ERRORS = frozenset({ErrorCode.FEED_UNREACHABLE})
+
+
+def _named(reports: list[FeedReport]) -> str:
+    return ", ".join(f"{r.source} ({r.error})" for r in reports)
+
+
+def _feed_stop(reports: list[FeedReport]) -> tuple[str, int] | None:
+    """Why the job must stop after ingest, with its exit code, or None when it can go on.
+
+    A feed that failed for a passing reason would leave a hole in a digest that cannot be redone
+    (a saved digest blocks the rerun), so it stops the job. A feed that fails for a lasting reason
+    would block every day, so it is reported and skipped.
+    """
+    if not reports:
+        return "error: no feeds are enabled in the feed list. Retrying will not help: add or enable a feed.", 2
+    failed = [r for r in reports if r.error is not None]
+    passing = [r for r in failed if r.error in RETRIABLE_FEED_ERRORS]
+    lasting = [r for r in failed if r.error not in RETRIABLE_FEED_ERRORS]
+    if passing:
+        text = (
+            f"error: {len(passing)} of {len(reports)} feeds could not be read: {_named(passing)}. "
+            "This may be temporary: run the same command again. No digest was saved and no model was "
+            "called, so a retry for the same day starts clean."
+        )
+        if lasting:
+            text += f" Retrying will not fix: {_named(lasting)}; change the feed list for those."
+        return text, 1
+    if len(lasting) == len(reports):
+        return (
+            f"error: no feed could be read, and retrying will not fix: {_named(lasting)}. "
+            "Change the feed list or the feeds themselves. No digest was saved and no model was called.",
+            2,
+        )
+    return None
+
+
+def run_pipeline(
+    db_path: Path, feeds_path: Path, out_dir: Path, target: date, client: MeteredClient,
+    review_enabled: bool = True,
+) -> int:
+    """The whole daily job in order: ingest, extract, then generate. Stops at the first stage that cannot go on.
+
+    Ingest stops the job before any page fetch or model spend when its items would be stale or
+    incomplete: exit 1 when a retry may work, exit 2 when the feed setup must change. A failed
+    extract only costs the digest its full text, so the job goes on. Otherwise the exit code is
+    generate's.
+    """
+    print("== ingest ==")
+    reports = _ingest_reports(db_path, feeds_path)
+    if stop := _feed_stop(reports):
+        print(_printable(stop[0]), file=sys.stderr)
+        return stop[1]
+    lasting = [r for r in reports if r.error is not None]
+    if lasting:
+        print(_printable(f"warning: skipping feeds that cannot be read: {_named(lasting)}"), file=sys.stderr)
+    print("\n== extract ==")
+    days = (date.today() - target).days + 1  # reaches back to the digest day
+    if run_extract(db_path, None, days) != 0:
+        print("warning: no article text could be fetched; the digest uses feed text only", file=sys.stderr)
+    print("\n== generate ==")
+    return run_generate(db_path, out_dir, target, client, review_enabled)
 
 
 def _refresh_index(out_dir: Path) -> list[str]:
@@ -340,24 +422,40 @@ def main() -> None:
         "--no-review", action="store_true",
         help="skip the Reviewer; nothing is saved and the exit code is 3 (to test the pipeline cheaply)",
     )
+    r = sub.add_parser(
+        "run", help="the whole daily job: ingest, extract, then generate yesterday's digest (one command)"
+    )
+    r.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
+    r.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML)")
+    r.add_argument("--out-dir", type=Path, default=None, help="where digests go (default: newsletters/ in the project)")
+    r.add_argument(
+        "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",
+        help="digest day, local time, earlier than today (default: yesterday)",
+    )
+    r.add_argument("--debug", action="store_true", help="log every model call and review round to stderr")
+    r.add_argument(
+        "--no-review", action="store_true",
+        help="skip the Reviewer; nothing is saved and the exit code is 3 (to test the pipeline cheaply)",
+    )
     args = parser.parse_args()
-    if args.command == "generate":
+    if args.command in ("generate", "run"):
         target = args.date or date.today() - timedelta(days=1)
         if target >= date.today():
             print("error: --date must be earlier than today", file=sys.stderr)
             raise SystemExit(2)
         out_dir = args.out_dir or DEFAULT_NEWSLETTERS_DIR
         existing = digest_path(out_dir, target)
-        if existing.exists():  # before any key check or model spend
+        if existing.exists():  # before any fetch, key check or model spend
             print(_printable(f"ALREADY_EXISTS: {existing}"))
             raise SystemExit(0)
-        client = _build_client(DEFAULT_SETTINGS_PATH)
+        client = _build_client(DEFAULT_SETTINGS_PATH)  # a missing key stops `run` before it fetches anything
         if client is None:
             raise SystemExit(2)
+        db_path = args.db or data_dir() / "digest.db"
         with _debug_logging(args.debug):
-            raise SystemExit(
-                run_generate(args.db or data_dir() / "digest.db", out_dir, target, client, not args.no_review)
-            )
+            if args.command == "run":
+                raise SystemExit(run_pipeline(db_path, args.feeds, out_dir, target, client, not args.no_review))
+            raise SystemExit(run_generate(db_path, out_dir, target, client, not args.no_review))
     if args.command == "draft":
         target = args.date or date.today() - timedelta(days=1)
         client = None

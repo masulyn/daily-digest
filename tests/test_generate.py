@@ -5,13 +5,15 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx2
 import pytest
 
 from api_helpers import APPROVE, FAKE_KEY, blocked, script
 from daily_digest import cli
-from daily_digest.contracts import CitedSource, PublishedDigest, ReviewSummary, UsageRecord
+from daily_digest.contracts import ErrorCode, CitedSource, PublishedDigest, ReviewSummary, UsageRecord
 from daily_digest.digest import build_digest, render_markdown
 from daily_digest.graph import DigestState
+from daily_digest.ingest import FeedReport
 from daily_digest.publisher import (
     AlreadyExists,
     markdown_for,
@@ -528,3 +530,210 @@ def test_the_escaped_preview_still_fits_in_160_characters(tmp_path):
     rebuild_index(out)
     preview = [l for l in (out / "index.md").read_text().splitlines() if l.startswith("  ")][0].strip()
     assert len(preview) <= 160 and preview.endswith("…") and not preview.endswith("\\…")
+
+
+# --- run: the whole pipeline in one command ------------------------------------------------
+
+def run_cli(monkeypatch, env, *extra, day: date = DAY) -> int:
+    db, out = env
+    monkeypatch.setattr(
+        sys, "argv", ["daily-digest", "run", "--db", str(db), "--out-dir", str(out), "--date", day.isoformat(), *extra]
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    return exit_info.value.code
+
+
+@pytest.fixture
+def stages(monkeypatch):
+    """Record the stages `run` starts; ingest and extract succeed without touching the network."""
+    calls = []
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: calls.append("ingest") or [FeedReport(source="A")])
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: calls.append(f"extract:{days}") or 0)
+    return calls
+
+
+def test_run_does_ingest_then_extract_then_generate(monkeypatch, env, stages):
+    out = env[1]
+    script(monkeypatch, [make_draft(300), APPROVE])
+    today = date.today()
+    assert run_cli(monkeypatch, env, day=DAY) == 0
+    assert stages == ["ingest", f"extract:{(today - DAY).days + 1}"]  # the window reaches back to the digest day
+    assert files(out) == ["2026-10-14.json", "2026-10-14.md", "index.md"]
+
+
+def test_run_for_an_existing_digest_does_nothing_at_all(monkeypatch, env, stages, capsys):
+    out = env[1]
+    out.mkdir()
+    (out / "2026-10-14.md").write_text("done")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert run_cli(monkeypatch, env) == 0
+    assert stages == [] and capsys.readouterr().out.startswith("ALREADY_EXISTS:")
+
+
+def test_run_without_a_key_fetches_nothing(monkeypatch, env, stages):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert run_cli(monkeypatch, env) == 2
+    assert stages == []
+
+
+def failing_feeds(monkeypatch, stages, *errors):
+    reports = [FeedReport(source=f"Feed{i}", error=e) for i, e in enumerate(errors)]
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: stages.append("ingest") or reports)
+
+
+def test_run_stops_with_a_retriable_error_when_no_feed_could_be_read(monkeypatch, env, stages, capsys):
+    failing_feeds(monkeypatch, stages, ErrorCode.FEED_UNREACHABLE, ErrorCode.FEED_UNREACHABLE)
+    queue = script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 1
+    assert stages == ["ingest"] and len(queue) == 2 and files(env[1]) == []
+    err = capsys.readouterr().err
+    assert "may be temporary" in err and "run the same command again" in err and "no digest was saved" in err.lower()
+
+
+def test_run_says_so_when_retrying_will_not_help(monkeypatch, env, stages, capsys):
+    failing_feeds(monkeypatch, stages, ErrorCode.ROBOTS_DISALLOWED, ErrorCode.FEED_INVALID)
+    script(monkeypatch, [])
+    assert run_cli(monkeypatch, env) == 2
+    err = capsys.readouterr().err
+    assert "retrying will not fix: Feed0 (ROBOTS_DISALLOWED), Feed1 (FEED_INVALID)" in err
+    assert stages == ["ingest"]
+
+
+def test_one_feed_failing_for_a_passing_reason_stops_the_run_even_if_others_were_read(monkeypatch, env, stages, capsys):
+    reports = [FeedReport(source="Good"), FeedReport(source="Flaky", error=ErrorCode.FEED_UNREACHABLE),
+               FeedReport(source="Blocked", error=ErrorCode.ROBOTS_DISALLOWED)]
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: stages.append("ingest") or reports)
+    queue = script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "1 of 3 feeds could not be read: Flaky (FEED_UNREACHABLE)" in err and "run the same command again" in err
+    assert "Retrying will not fix: Blocked (ROBOTS_DISALLOWED)" in err
+    assert stages == ["ingest"] and len(queue) == 2 and files(env[1]) == []
+
+
+def test_a_feed_that_fails_for_a_lasting_reason_is_skipped_with_a_warning(monkeypatch, env, stages, capsys):
+    reports = [FeedReport(source="Good"), FeedReport(source="Blocked", error=ErrorCode.ROBOTS_DISALLOWED)]
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: stages.append("ingest") or reports)
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 0
+    assert "skipping feeds that cannot be read: Blocked (ROBOTS_DISALLOWED)" in capsys.readouterr().err
+    assert "2026-10-14.md" in files(env[1])
+
+
+def test_run_with_no_enabled_feeds_is_a_setup_error(monkeypatch, env, stages, capsys):
+    failing_feeds(monkeypatch, stages)
+    script(monkeypatch, [])
+    assert run_cli(monkeypatch, env) == 2
+    assert "no feeds are enabled" in capsys.readouterr().err
+
+
+def test_a_retry_after_a_failed_ingest_for_the_same_day_succeeds(monkeypatch, env, stages):
+    failing_feeds(monkeypatch, stages, ErrorCode.FEED_UNREACHABLE)
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 1
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: [FeedReport(source="A")])
+    assert run_cli(monkeypatch, env) == 0 and "2026-10-14.md" in files(env[1])
+
+
+def test_run_goes_on_without_article_text_when_extract_fails(monkeypatch, env, stages, capsys):
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: stages.append("extract") or 1)
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 0
+    assert "feed text only" in capsys.readouterr().err and files(env[1]) == ["2026-10-14.json", "2026-10-14.md", "index.md"]
+
+
+def test_run_passes_generates_exit_code_through(monkeypatch, env, stages):
+    script(monkeypatch, [make_draft(300)])
+    assert run_cli(monkeypatch, env, "--no-review") == 3
+    assert files(env[1]) == []
+
+
+@pytest.mark.parametrize("status", [400, 401])
+def test_a_permanent_model_error_says_a_retry_will_not_help(monkeypatch, env, capsys, status):
+    script(monkeypatch, [httpx2.Response(status, json={"error": {"message": "no"}})])
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert f"the model API returned HTTP {status}" in err and "Retrying will not help until the cause is fixed" in err
+    assert "No digest was saved." in err and files(env[1]) == []
+
+
+def test_a_budget_stop_says_a_retry_hits_the_same_cap(monkeypatch, env, capsys):
+    from decimal import Decimal
+
+    settings = cli.load_llm_settings(cli.DEFAULT_SETTINGS_PATH).model_copy(update={"max_usd_per_run": Decimal("0.001")})
+    monkeypatch.setattr(cli, "load_llm_settings", lambda path: settings)
+    script(monkeypatch, [make_draft(300)])
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "budget exceeded" in err and "same cap" in err and files(env[1]) == []
+
+
+def test_a_transient_model_error_that_outlasts_the_retries_says_it_may_be_temporary(monkeypatch, env, capsys):
+    monkeypatch.setattr("daily_digest.llm.metered.time.sleep", lambda seconds: None)
+    script(monkeypatch, [httpx2.Response(503, json={})] * 3)
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "HTTP 503" in err and "This may be temporary: run the same command again." in err
+    assert files(env[1]) == [] and seen_rows(env[0]) == 0
+
+
+def test_a_draft_the_model_gets_wrong_twice_says_a_retry_may_work(monkeypatch, env, capsys):
+    script(monkeypatch, [make_draft(199), make_draft(199)])
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "A retry may work" in err and "spends another run's budget" in err
+
+
+class FakeFetcher:
+    """Serves one good feed and one that answers 503 until `down` is emptied; robots.txt is absent."""
+
+    down = {"flaky"}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def set_host_delay(self, host, seconds):
+        pass
+
+    def fetch(self, url):
+        if url.endswith("/robots.txt"):
+            return 404, b""
+        if any(name in url for name in self.down):
+            return 503, b""
+        return 200, FEED
+
+
+FEED = (
+    '<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>'
+    "<item><title>Fresh item</title><link>https://good.example.com/fresh</link>"
+    "<pubDate>Wed, 14 Oct 2026 14:00:00 GMT</pubDate><description>A fresh thing happened.</description></item>"
+    "</channel></rss>"
+).encode()
+
+
+def test_a_flaky_feed_stops_run_and_the_retry_for_the_same_day_saves_without_duplicates(monkeypatch, env, tmp_path):
+    feeds = tmp_path / "feeds.toml"
+    feeds.write_text(
+        '[[feeds]]\nname = "Good"\nurl = "https://good.example.com/feed"\ncategory = "t"\n'
+        '[[feeds]]\nname = "Flaky"\nurl = "https://flaky.example.com/feed"\ncategory = "t"\n'
+    )
+    monkeypatch.setattr(cli, "HttpFetcher", FakeFetcher)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: 0)
+    FakeFetcher.down = {"flaky"}
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env, "--feeds", str(feeds)) == 1
+    assert files(env[1]) == [] and seen_rows(env[0]) == 0
+    with Store(env[0]) as store:
+        stored = store.count()
+    FakeFetcher.down = set()
+    assert run_cli(monkeypatch, env, "--feeds", str(feeds)) == 0
+    assert "2026-10-14.md" in files(env[1])
+    with Store(env[0]) as store:
+        assert store.count() == stored  # the good feed's item was not stored twice
