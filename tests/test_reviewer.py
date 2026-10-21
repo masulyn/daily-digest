@@ -264,6 +264,12 @@ def test_budget_exceeded_in_round_two_gives_the_same_outcome():
     assert len(client.requests) == 3 and outcome.summary.removed == 1
 
 
+def test_a_headline_issue_still_fails_the_draft_when_the_budget_ends_the_loop():
+    headline_issue = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Soften it.")
+    outcome, _ = run([ReviewResult(issues=[headline_issue]), BudgetExceeded("x")])
+    assert outcome.summary.status == "failed" and outcome.draft is None
+
+
 def test_budget_exceeded_in_the_revision_also_degrades():
     outcome, _ = run([blocked(), BudgetExceeded("x")])
     assert outcome.summary.status == "degraded" and outcome.summary.rounds == 1
@@ -429,15 +435,34 @@ def test_an_over_long_required_change_is_clipped_not_fatal():
 def test_a_mechanical_headline_problem_cannot_be_removed_so_the_draft_fails():
     outcome, _ = run([approve()], draft=make_draft(300, headline=" ".join(["word"] * 13)), rounds=1)
     assert outcome.summary.status == "failed" and outcome.draft is None
-    assert any("headline has 13 words" in n for n in outcome.notes)
+    assert [n for n in outcome.notes if "13 words" in n] == ["could not repair the draft: the headline has 13 words; the limit is 12"]
 
 
-def test_a_model_headline_issue_stays_listed_and_the_headline_is_unchanged():
+def test_an_unresolved_blocking_headline_issue_fails_the_draft_instead_of_publishing_the_headline():
     headline_issue = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Soften it.")
     outcome, _ = run([ReviewResult(issues=[headline_issue])], rounds=1)
-    assert outcome.summary.status == "not_converged" and outcome.summary.removed == 0
+    assert outcome.summary.status == "failed" and outcome.draft is None
     assert outcome.summary.unresolved == ["headline (overstated): Soften it."]
-    assert outcome.draft.headline == make_draft(300).headline
+    assert any("headline (overstated): Soften it. cannot be fixed by removing a sentence" in n for n in outcome.notes)
+
+
+def test_a_headline_issue_that_the_revision_fixes_is_approved():
+    headline_issue = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Soften it.")
+    outcome, client = run([ReviewResult(issues=[headline_issue]), make_draft(300), approve()], rounds=2)
+    assert outcome.summary.status == "approved" and outcome.draft is not None
+
+
+def test_a_headline_issue_that_survives_every_round_fails_the_draft():
+    headline_issue = ReviewIssue(section="headline", severity="blocking", category="unsupported", required_change="Cut it.")
+    blocked_every_round = ReviewResult(issues=[headline_issue])
+    outcome, _ = run([blocked_every_round, make_draft(300), blocked_every_round, make_draft(300), blocked_every_round], rounds=3)
+    assert outcome.summary.status == "failed" and outcome.draft is None and outcome.summary.rounds == 3
+
+
+def test_a_removable_sentence_issue_still_gives_not_converged():
+    sentence = ReviewIssue(section="what_you_need_to_know", index=1, severity="blocking", category="unsupported", required_change="Cut.")
+    outcome, _ = run([ReviewResult(issues=[sentence])], rounds=1)
+    assert outcome.summary.status == "not_converged" and outcome.summary.removed == 1
 
 
 def test_a_reviewer_error_that_is_not_about_budget_leaves_the_first_draft_unreviewed_with_a_note():

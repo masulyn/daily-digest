@@ -159,3 +159,15 @@ def test_the_schema_sent_for_the_review_constrains_section_and_category_to_enums
     # a union with a one-value Literal would reach the API as an unconstrained string
     assert props["section"]["enum"] == ["what_you_need_to_know", "worth_a_closer_look", "headline"]
     assert set(props["severity"]["enum"]) == {"blocking", "advisory"} and "unsupported" in props["category"]["enum"]
+
+
+def test_a_headline_issue_that_survives_every_round_prints_no_digest_and_exits_one(db, monkeypatch, capsys):
+    from daily_digest.contracts import ReviewIssue
+
+    bad = ReviewResult(issues=[ReviewIssue(
+        section="headline", severity="blocking", category="overstated", required_change="Soften it.")])
+    script(monkeypatch, [make_draft(300), bad, make_draft(300), bad, make_draft(300), bad])
+    assert draft_cli(monkeypatch, db) == 1
+    out = capsys.readouterr().out
+    assert f"# {HEADLINE}" not in out and "review: FAILED after 3 round(s)" in out
+    assert "  - unresolved: headline (overstated): Soften it." in out
