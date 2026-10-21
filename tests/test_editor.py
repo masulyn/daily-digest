@@ -732,6 +732,11 @@ def test_only_the_writing_prompt_sets_a_body_target_but_both_aim_the_headline_be
         assert "count them" not in prompt
 
 
+def test_the_prompts_ban_angle_brackets_which_the_publisher_rejects():
+    for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
+        assert 'Never use the characters < or >; write "under" or "over" instead.' in prompt
+
+
 def test_the_prompts_ask_a_quote_sentence_to_say_what_the_quote_is_about():
     for prompt in (SYSTEM_PROMPT, REVISE_PROMPT):
         assert "what the quote is about, so it makes sense on its own, using only what the item says" in prompt
@@ -849,12 +854,13 @@ def test_oldest_items_lose_full_text_first_and_order_is_kept():
 
 def test_items_are_dropped_from_the_end_when_extracts_do_not_fit():
     batch = _long_items(10)
-    client = MockClient([], max_input_tokens=2500, max_output_tokens=500)
+    room = 400  # tokens left for items after the fixed prompt (ten extracts need about 800); relative, so rewording cannot break this
+    client = MockClient([], max_input_tokens=_estimate([]) + room + 500, max_output_tokens=500)
     fitted, notes = fit_items(batch, client)
     assert 0 < len(fitted) < 10
     assert [i.id for i in fitted] == [i.id for i in batch][: len(fitted)]
     assert any(n.startswith("left out") for n in notes)
-    assert _estimate(fitted) <= 2000
+    assert _estimate(fitted) <= _estimate([]) + room
 
 
 def test_a_day_that_fits_gets_no_notes_and_the_same_prompt():

@@ -13,6 +13,7 @@ from .contracts import Source
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FEEDS_PATH = PROJECT_ROOT / "config" / "feeds.toml"
 DEFAULT_SETTINGS_PATH = PROJECT_ROOT / "config" / "settings.toml"
+DEFAULT_NEWSLETTERS_DIR = PROJECT_ROOT / "newsletters"
 
 
 class _FeedsFile(BaseModel):

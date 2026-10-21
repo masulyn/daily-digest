@@ -4,32 +4,15 @@ from datetime import date
 
 import httpx2
 import pytest
-from pydantic import SecretStr
 
 from daily_digest import cli
-from daily_digest.contracts import ReviewIssue, ReviewResult
-from daily_digest.llm.anthropic_client import AnthropicClient
+from daily_digest.contracts import ReviewResult
 from daily_digest.store import Store
+from api_helpers import APPROVE, FAKE_KEY, blocked, issue, script
 from draft_helpers import HEADLINE, make_draft
 from helpers import editor_items
 
 DAY = date(2026, 10, 14)
-FAKE_KEY = "sk-ant-FAKE-test-key-0123456789"
-REQUEST_USAGE = (2400, 700)
-
-
-def issue(index=1, change="Remove the unsupported claim.", severity="blocking", category="unsupported"):
-    return ReviewIssue(section="what_you_need_to_know", index=index, severity=severity, category=category,
-                       required_change=change)
-
-
-def blocked(**kwargs) -> ReviewResult:
-    return ReviewResult(issues=[issue(**kwargs)], verdict="revise")
-
-
-APPROVE = ReviewResult(verdict="approve")
-
-
 @pytest.fixture
 def db(tmp_path):
     path = tmp_path / "digest.db"
@@ -39,33 +22,6 @@ def db(tmp_path):
             if item.article_text:
                 store.save_article_text(item.id, item.article_text)
     return path
-
-
-def script(monkeypatch, replies):
-    """Serve the given models (or (model, usage) pairs) in order as the API's replies."""
-    queue = list(replies)
-
-    def handler(request):
-        reply = queue.pop(0)
-        if isinstance(reply, httpx2.Response):
-            return reply
-        model, usage = reply if isinstance(reply, tuple) else (reply, REQUEST_USAGE)
-        body = {
-            "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-sonnet-5-5",
-            "content": [{"type": "text", "text": model.model_dump_json()}], "stop_reason": "end_turn",
-            "stop_sequence": None, "usage": {"input_tokens": usage[0], "output_tokens": usage[1]},
-        }
-        return httpx2.Response(200, json=body)
-
-    def make(settings, api_key: SecretStr):
-        return AnthropicClient(
-            api_key=api_key, model=settings.model, timeout_seconds=5,
-            http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
-        )
-
-    monkeypatch.setenv("ANTHROPIC_API_KEY", FAKE_KEY)
-    monkeypatch.setattr(cli, "_make_inner_client", make)
-    return queue
 
 
 def draft_cli(monkeypatch, db, *extra):

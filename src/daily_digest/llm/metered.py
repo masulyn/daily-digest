@@ -56,6 +56,7 @@ class MeteredClient:
         *,
         sleep: Callable[[float], None] | None = None,
     ) -> None:
+        self.model = settings.model
         self.max_input_tokens = settings.max_input_tokens
         self.max_output_tokens = settings.max_output_tokens
         self.max_review_rounds = settings.max_review_rounds
