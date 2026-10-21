@@ -83,7 +83,7 @@ def ingest(sources: list[Source], fetch: FetchFn, robots: RobotsChecker, store: 
         report = FeedReport(source=source.name)
         reports.append(report)
         if not robots.allowed(source.url):
-            report.error = ErrorCode.ROBOTS_DISALLOWED
+            report.error = ErrorCode.FEED_UNREACHABLE if robots.unavailable(source.url) else ErrorCode.ROBOTS_DISALLOWED
             continue
         try:
             status, body = fetch(source.url)

@@ -18,6 +18,7 @@ class RobotsChecker:
         self._fetch = fetch
         self._user_agent = user_agent
         self._cache: dict[str, RobotFileParser | bool] = {}
+        self._unavailable: set[str] = set()
 
     def _rules_for(self, origin: str) -> RobotFileParser | bool:
         """A parsed ruleset, True (no restrictions), or False (treat as disallowed)."""
@@ -27,6 +28,7 @@ class RobotsChecker:
             status, body = self._fetch(f"{origin}/robots.txt")
         except FetchError:
             result: RobotFileParser | bool = False  # cannot tell: be cautious
+            self._unavailable.add(origin)
         else:
             if 200 <= status < 300:
                 parser = RobotFileParser()
@@ -36,6 +38,7 @@ class RobotsChecker:
                 result = True
             else:
                 result = False
+                self._unavailable.add(origin)
         self._cache[origin] = result
         return result
 
@@ -47,6 +50,13 @@ class RobotsChecker:
             return None
         delay = rules.crawl_delay(self._user_agent)
         return float(delay) if delay is not None else None
+
+    def unavailable(self, url: str) -> bool:
+        """True when `allowed` is False only because robots.txt could not be read (a passing problem)."""
+        parts = urlsplit(url)
+        origin = f"{parts.scheme}://{parts.netloc}"
+        self._rules_for(origin)
+        return origin in self._unavailable
 
     def allowed(self, url: str) -> bool:
         parts = urlsplit(url)
