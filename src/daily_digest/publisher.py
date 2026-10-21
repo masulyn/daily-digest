@@ -183,8 +183,13 @@ def _preview(digest: FinalDigest) -> str:
         return ""
     text = " ".join(_MARKER.sub("", digest.what_you_need_to_know[0]).split())
     text = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
-    text = text if len(text) <= PREVIEW_CHARS else text[: PREVIEW_CHARS - 1].rstrip() + "…"
-    return link_text(text)
+    text = link_text(text)  # escaping adds characters, so the limit is applied to the escaped text
+    if len(text) <= PREVIEW_CHARS:
+        return text
+    cut = text[: PREVIEW_CHARS - 1].rstrip()
+    if (len(cut) - len(cut.rstrip("\\"))) % 2:
+        cut = cut[:-1]  # never leave a lone backslash that would escape the ellipsis
+    return cut + "…"
 
 
 def rebuild_index(out_dir: Path) -> list[str]:

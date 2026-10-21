@@ -518,3 +518,13 @@ def test_saved_files_follow_the_process_umask(tmp_path):
         os.umask(previous)
     assert (tmp_path / "private" / "2026-10-14.md").stat().st_mode & 0o777 == 0o600
     assert (tmp_path / "shared" / "2026-10-14.md").stat().st_mode & 0o777 == 0o644
+
+
+def test_the_escaped_preview_still_fits_in_160_characters(tmp_path):
+    out = tmp_path / "n"
+    published = published_for(DAY)
+    digest = published.digest.model_copy(update={"what_you_need_to_know": ["*" * 200 + " ends here."]})
+    save_digest(out, published.model_copy(update={"digest": digest}))
+    rebuild_index(out)
+    preview = [l for l in (out / "index.md").read_text().splitlines() if l.startswith("  ")][0].strip()
+    assert len(preview) <= 160 and preview.endswith("…") and not preview.endswith("\\…")
