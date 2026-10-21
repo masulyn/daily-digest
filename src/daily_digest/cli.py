@@ -21,13 +21,13 @@ from .config import (
     load_llm_settings,
     load_sources,
 )
-from .contracts import PublishedDigest, ReviewSummary, UsageRecord
+from .contracts import ErrorCode, PublishedDigest, ReviewSummary, UsageRecord
 from .digest import render_markdown, review_text
 from .editor import WriterFailed
 from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
 from .graph import DigestState, day_window, run_digest
-from .ingest import ingest
+from .ingest import FeedReport, ingest
 from .llm import LLMClient, LLMError, MeteredClient
 from .publisher import AlreadyExists, digest_path, provenance_for, rebuild_index, save_digest, validate_digest
 from .robots import RobotsChecker
@@ -51,7 +51,7 @@ def _open_existing(db_path: Path) -> Store | None:
         return None
 
 
-def run_ingest(db_path: Path, feeds_path: Path) -> int:
+def _ingest_reports(db_path: Path, feeds_path: Path) -> list[FeedReport]:
     _warn_if_no_contact()
     sources = load_sources(feeds_path)
     with HttpFetcher() as fetcher, Store(db_path) as store:
@@ -61,6 +61,11 @@ def run_ingest(db_path: Path, feeds_path: Path) -> int:
         for r in reports:
             print(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7}  {r.error or ''}")
         print(f"\nItems in database: {store.count()}  ({db_path})")
+    return reports
+
+
+def run_ingest(db_path: Path, feeds_path: Path) -> int:
+    reports = _ingest_reports(db_path, feeds_path)
     # Partial failures are reported in the table; only fail when nothing was ingested.
     return 0 if any(r.error is None for r in reports) else 1
 
@@ -269,20 +274,44 @@ def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient,
     return 0
 
 
+# Ways a feed read can fail that a later run may not hit again. A non-200 answer is reported as
+# FEED_UNREACHABLE too, so a permanently dead URL also lands here; the message says "may".
+RETRIABLE_FEED_ERRORS = frozenset({ErrorCode.FEED_UNREACHABLE})
+
+
+def _no_feed_message(reports: list[FeedReport]) -> str:
+    """Why a run with no readable feed stopped, and whether running it again can help."""
+    if not reports:
+        return "error: no feeds are enabled in the feed list. Retrying will not help: add or enable a feed."
+    fixes = [r for r in reports if r.error not in RETRIABLE_FEED_ERRORS]
+    if not fixes:
+        return (
+            "error: no feed could be read (network or server trouble). This may be temporary: run the same "
+            "command again. Nothing was saved and no model was called, so a retry for the same day starts clean."
+        )
+    names = ", ".join(f"{r.source} ({r.error})" for r in fixes)
+    return (
+        f"error: no feed could be read, and retrying will not fix: {names}. "
+        "Change the feed list or the feeds themselves. Nothing was saved and no model was called."
+    )
+
+
 def run_pipeline(
     db_path: Path, feeds_path: Path, out_dir: Path, target: date, client: MeteredClient,
     review_enabled: bool = True,
 ) -> int:
     """The whole daily job in order: ingest, extract, then generate. Stops at the first stage that cannot go on.
 
-    A feed run that stored nothing at all stops the job before any page fetch or model spend (exit 1).
-    A failed extract only costs the digest its full text, so the job goes on. The exit code is
-    generate's.
+    If no feed could be read, stored items would be stale, so the job stops before any page fetch or
+    model spend: exit 1 when a retry may work, exit 2 when the feed setup must change. A failed extract
+    only costs the digest its full text, so the job goes on. Otherwise the exit code is generate's.
     """
     print("== ingest ==")
-    if run_ingest(db_path, feeds_path) != 0:
-        print("error: no feed could be read; stopping before any model call", file=sys.stderr)
-        return 1
+    reports = _ingest_reports(db_path, feeds_path)
+    if not any(r.error is None for r in reports):
+        retriable = bool(reports) and all(r.error in RETRIABLE_FEED_ERRORS for r in reports)
+        print(_printable(_no_feed_message(reports)), file=sys.stderr)
+        return 1 if retriable else 2
     print("\n== extract ==")
     days = (date.today() - target).days + 1  # reaches back to the digest day
     if run_extract(db_path, None, days) != 0:

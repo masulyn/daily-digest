@@ -9,9 +9,10 @@ import pytest
 
 from api_helpers import APPROVE, FAKE_KEY, blocked, script
 from daily_digest import cli
-from daily_digest.contracts import CitedSource, PublishedDigest, ReviewSummary, UsageRecord
+from daily_digest.contracts import ErrorCode, CitedSource, PublishedDigest, ReviewSummary, UsageRecord
 from daily_digest.digest import build_digest, render_markdown
 from daily_digest.graph import DigestState
+from daily_digest.ingest import FeedReport
 from daily_digest.publisher import (
     AlreadyExists,
     markdown_for,
@@ -546,7 +547,7 @@ def run_cli(monkeypatch, env, *extra, day: date = DAY) -> int:
 def stages(monkeypatch):
     """Record the stages `run` starts; ingest and extract succeed without touching the network."""
     calls = []
-    monkeypatch.setattr(cli, "run_ingest", lambda db, feeds: calls.append("ingest") or 0)
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: calls.append("ingest") or [FeedReport(source="A")])
     monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: calls.append(f"extract:{days}") or 0)
     return calls
 
@@ -575,12 +576,42 @@ def test_run_without_a_key_fetches_nothing(monkeypatch, env, stages):
     assert stages == []
 
 
-def test_run_stops_before_extract_and_the_model_when_no_feed_could_be_read(monkeypatch, env, stages, capsys):
-    monkeypatch.setattr(cli, "run_ingest", lambda db, feeds: stages.append("ingest") or 1)
+def failing_feeds(monkeypatch, stages, *errors):
+    reports = [FeedReport(source=f"Feed{i}", error=e) for i, e in enumerate(errors)]
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: stages.append("ingest") or reports)
+
+
+def test_run_stops_with_a_retriable_error_when_no_feed_could_be_read(monkeypatch, env, stages, capsys):
+    failing_feeds(monkeypatch, stages, ErrorCode.FEED_UNREACHABLE, ErrorCode.FEED_UNREACHABLE)
     queue = script(monkeypatch, [make_draft(300), APPROVE])
     assert run_cli(monkeypatch, env) == 1
     assert stages == ["ingest"] and len(queue) == 2 and files(env[1]) == []
-    assert "no feed could be read" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "may be temporary" in err and "run the same command again" in err and "nothing was saved" in err.lower()
+
+
+def test_run_says_so_when_retrying_will_not_help(monkeypatch, env, stages, capsys):
+    failing_feeds(monkeypatch, stages, ErrorCode.FEED_UNREACHABLE, ErrorCode.ROBOTS_DISALLOWED)
+    script(monkeypatch, [])
+    assert run_cli(monkeypatch, env) == 2
+    err = capsys.readouterr().err
+    assert "retrying will not fix: Feed1 (ROBOTS_DISALLOWED)" in err and "Feed0" not in err
+    assert stages == ["ingest"]
+
+
+def test_run_with_no_enabled_feeds_is_a_setup_error(monkeypatch, env, stages, capsys):
+    failing_feeds(monkeypatch, stages)
+    script(monkeypatch, [])
+    assert run_cli(monkeypatch, env) == 2
+    assert "no feeds are enabled" in capsys.readouterr().err
+
+
+def test_a_retry_after_a_failed_ingest_for_the_same_day_succeeds(monkeypatch, env, stages):
+    failing_feeds(monkeypatch, stages, ErrorCode.FEED_UNREACHABLE)
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 1
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: [FeedReport(source="A")])
+    assert run_cli(monkeypatch, env) == 0 and "2026-10-14.md" in files(env[1])
 
 
 def test_run_goes_on_without_article_text_when_extract_fails(monkeypatch, env, stages, capsys):

@@ -10,7 +10,7 @@ One command runs everything:
 ANTHROPIC_API_KEY=... uv run daily-digest run [--date YYYY-MM-DD] [--out-dir PATH]
 ```
 
-`run` does `ingest`, then `extract` (reaching back to the digest day), then `generate`, and exits with `generate`'s code. Before doing any of that it checks whether the day's digest already exists (it then prints `ALREADY_EXISTS` and exits 0, with no fetching and no spend) and that the API key and settings work (exit 2). It stops before extract and the model if no feed at all could be read (exit 1). If page fetching fails it carries on with feed text only and warns. The commands below are the same steps, for running or debugging one at a time.
+`run` does `ingest`, then `extract` (reaching back to the digest day), then `generate`, and exits with `generate`'s code. Before doing any of that it checks whether the day's digest already exists (it then prints `ALREADY_EXISTS` and exits 0, with no fetching and no spend) and that the API key and settings work (exit 2). If no feed at all could be read it stops before extract and the model, because stored items would be stale: exit 1 with a message saying a retry may work (nothing was saved, so running the same command again starts clean), or exit 2 when retrying cannot help (for example a feed that robots.txt disallows, or no enabled feeds), naming the feeds to fix. If page fetching fails it carries on with feed text only and warns. The commands below are the same steps, for running or debugging one at a time.
 
 ## Commands
 
