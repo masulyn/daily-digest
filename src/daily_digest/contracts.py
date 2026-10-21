@@ -1,6 +1,7 @@
 """Shared data contracts. Every handoff between components is validated against these."""
 
 from datetime import date
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -131,3 +132,31 @@ class FinalDigest(BaseModel):
     reading_time_minutes: int
     notes: list[str] = Field(default_factory=list)
     review: ReviewSummary = Field(default_factory=lambda: ReviewSummary(status="unreviewed"))
+
+
+class ProvenanceEntry(BaseModel):
+    """What supports one sentence of the saved digest (FR-1.1). The sentence text is in the paragraphs."""
+
+    section: SectionName
+    index: int = Field(ge=0)
+    type: SentenceType
+    item_ids: list[str]
+    quote: str | None = None
+    speaker: str | None = None
+
+
+class UsageRecord(BaseModel):
+    model: str
+    calls: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    usd: Decimal
+    unknown_usage_attempts: int = Field(default=0, ge=0)
+
+
+class PublishedDigest(BaseModel):
+    """The JSON saved next to the Markdown: the digest, its provenance map, and what the run cost."""
+
+    digest: FinalDigest
+    provenance: list[ProvenanceEntry]
+    usage: UsageRecord

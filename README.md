@@ -11,6 +11,7 @@ uv run daily-digest draft --stub              # offline placeholder summaries; n
 uv run daily-digest draft [--date YYYY-MM-DD] # writes the day's digest as Markdown, then a Reviewer checks it (at least two model calls)
 uv run daily-digest draft --debug             # also log every model call and review round (counts and dollars, never text or keys) to stderr
 uv run daily-digest draft --no-review        # skip the Reviewer: cheaper, but the digest is marked NOT REVIEWED and the exit code is 3
+uv run daily-digest generate [--date YYYY-MM-DD] [--out-dir PATH]   # make yesterday's digest for real: review it, save it, mark its items seen
 ```
 
 `draft` prints the digest (headline, two sections with `[n]` citations, a numbered Sources list), then any notes, then a usage line (calls, tokens in and out, dollars). The usage line prints on every exit, including errors. An illustrative run (numbers made up):
@@ -42,6 +43,24 @@ After the digest is written, a Reviewer checks each sentence against the sources
 - `review: FAILED ...` - the draft could not be repaired (for example, removing a flagged sentence left it under 200 words). No digest is printed.
 
 Exit codes: `0` a reviewed digest (approved, not converged or degraded) or nothing to write; `1` an error or a draft that could not be repaired; `2` a setup problem (no key, bad settings, missing database); `3` the digest was not reviewed. A review adds about 2 to 4 cents per round; most days should approve in one or two rounds.
+
+### Generate
+
+`generate` is `draft` made permanent. It runs the same pipeline (writer, then Reviewer), and if the digest passes a last check it saves three things and records the day's items as seen:
+
+- `newsletters/YYYY-MM-DD.md` - the digest exactly as `draft` prints it, plus a final italic line saying how it was reviewed (for example `*Review: approved after 2 round(s).*`).
+- `newsletters/YYYY-MM-DD.json` - the digest as data, plus a provenance record for every sentence (its type, the items behind it, the quote and speaker) and what the run cost. It holds no prompts and no key, and no article text beyond what the digest itself quotes (its notes can quote sentences that were dropped).
+- `newsletters/index.md` - every saved digest, newest first, with a one-line preview. It is rebuilt from the saved files each time, so it heals itself if you delete one.
+
+Every item the pipeline considered that day (not only the cited ones) goes into the seen-items ledger, but only after the files are saved, so a failed run never uses items up. `newsletters/` is git-ignored: digests quote articles and are your data. To show one publicly, copy it into `examples/` on purpose.
+
+- **Date:** defaults to yesterday. `--date` must be earlier than today.
+- **One digest per date, never overwritten.** If `newsletters/<date>.md` exists, `generate` prints `ALREADY_EXISTS: <path>` before reading the key or calling any model, and exits 0. There is no way to replace a digest in v1.
+- **What gets saved:** `approved`, `not_converged` and `degraded` digests. A digest the Reviewer never judged (`unreviewed`, including `--no-review`) or could not repair (`failed`) is never saved and marks nothing as seen.
+- **A last check before saving** looks at what code built from the draft: every `[n]` marker has a Sources entry and the other way round with numbers 1 to N, every Sources URL is one of that day's items, Sources titles are one line, and the text has no angle brackets, HTML or Markdown links. The words themselves were already checked by the Reviewer. A failure prints a fixed reason, saves nothing and exits 1.
+- **A quiet day** (fewer than 3 items) saves nothing and exits 0.
+- **Exit codes:** `0` saved, already exists, or nothing to write; `1` error, a draft that could not be repaired, a failed check, or a ledger that could not be updated (the files stay and the message says the next digest may repeat items); `2` setup problem (no key, bad settings, missing database, a bad `--date`); `3` not reviewed, nothing saved.
+- **Cost:** the same as `draft`, since it runs the same pipeline. `draft` itself still saves nothing and writes no ledger rows.
 
 ## Model access and cost
 

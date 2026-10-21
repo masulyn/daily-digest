@@ -80,14 +80,31 @@ def build_digest(
     )
 
 
-def _link_text(text: str) -> str:
+def link_text(text: str) -> str:
     """Titles come from the web: one line, no brackets, no Markdown emphasis or HTML."""
     text = " ".join(text.split()).replace("[", "(").replace("]", ")")
     return re.sub(r"([\\*_`<>])", r"\\\1", text)
 
 
 def _link_target(url: str) -> str:
-    return url.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
+    for char, code in (("(", "%28"), (")", "%29"), (" ", "%20"), ("<", "%3C"), (">", "%3E"), ("`", "%60"), ("\\", "%5C")):
+        url = url.replace(char, code)
+    return url
+
+
+def review_text(review: ReviewSummary) -> str:
+    """How the digest was reviewed, in the words the `review:` line and the saved file share."""
+    rounds = f"{review.rounds} round(s)"
+    removed = ""
+    if review.removed:
+        removed = f"; {review.removed} sentence{'' if review.removed == 1 else 's'} removed"
+    return {
+        "approved": f"approved after {rounds}",
+        "not_converged": f"not converged after {rounds}{removed}",
+        "degraded": f"degraded at 80% of the budget after {rounds}{removed}",
+        "unreviewed": "NOT REVIEWED",
+        "failed": f"FAILED after {rounds}; the draft could not be repaired",
+    }[review.status]
 
 
 def render_markdown(digest: FinalDigest) -> str:
@@ -110,7 +127,7 @@ def render_markdown(digest: FinalDigest) -> str:
     ]
     for source in digest.sources:
         lines.append(
-            f"{source.number}. [{_link_text(source.title)}]({_link_target(source.url)})"
-            f" — {_link_text(source.source)}, {source.published.date().isoformat()}"
+            f"{source.number}. [{link_text(source.title)}]({_link_target(source.url)})"
+            f" — {link_text(source.source)}, {source.published.date().isoformat()}"
         )
     return "\n".join(lines)

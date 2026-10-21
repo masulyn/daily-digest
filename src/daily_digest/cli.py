@@ -13,6 +13,7 @@ from pydantic import SecretStr
 
 from .config import (
     DEFAULT_FEEDS_PATH,
+    DEFAULT_NEWSLETTERS_DIR,
     DEFAULT_SETTINGS_PATH,
     LLMSettings,
     SettingsError,
@@ -20,14 +21,15 @@ from .config import (
     load_llm_settings,
     load_sources,
 )
-from .contracts import ReviewSummary
-from .digest import render_markdown
+from .contracts import PublishedDigest, ReviewSummary, UsageRecord
+from .digest import render_markdown, review_text
 from .editor import WriterFailed
 from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
-from .graph import day_window, run_digest
+from .graph import DigestState, day_window, run_digest
 from .ingest import ingest
 from .llm import LLMClient, LLMError, MeteredClient
+from .publisher import AlreadyExists, digest_path, provenance_for, rebuild_index, save_digest, validate_digest
 from .robots import RobotsChecker
 from .store import DatabaseNotFound, Store
 
@@ -152,21 +154,12 @@ def run_draft(
             print(client.usage_line())
 
 
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
-
-
 def _review_lines(review: ReviewSummary) -> list[str]:
-    rounds = f"{review.rounds} round(s)"
-    removed = f"; {_plural(review.removed, 'sentence')} removed" if review.removed else ""
-    head = {
-        "approved": f"review: approved after {rounds}",
-        "not_converged": f"review: not converged after {rounds}{removed}",
-        "degraded": f"review: degraded at 80% of the budget after {rounds}{removed}",
-        "unreviewed": "review: NOT REVIEWED",
-        "failed": f"review: FAILED after {rounds}; the draft could not be repaired",
-    }[review.status]
-    return [head, *[f"  - unresolved: {t}" for t in review.unresolved], *[f"  - advisory: {t}" for t in review.advisory]]
+    return [
+        f"review: {review_text(review)}",
+        *[f"  - unresolved: {t}" for t in review.unresolved],
+        *[f"  - advisory: {t}" for t in review.advisory],
+    ]
 
 
 def _print_draft(db_path: Path, target: date, client: MeteredClient | None, review_enabled: bool) -> int:
@@ -193,6 +186,94 @@ def _print_draft(db_path: Path, target: date, client: MeteredClient | None, revi
     if review and review.status == "failed":
         return 1
     return 3 if review and review.status == "unreviewed" else 0
+
+
+def _print_review(state: DigestState) -> None:
+    if state.review:
+        print(_printable("\n" + "\n".join(_review_lines(state.review))))
+    for note in state.notes:
+        print(_printable(note))
+
+
+def run_generate(
+    db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool = True
+) -> int:
+    """Make the day's digest for real: run the pipeline, then validate, save, index and mark items seen.
+
+    Exit codes: 0 saved, already there, or nothing to write; 1 error, a draft that could not be
+    repaired, or a digest that failed validation; 2 setup problem; 3 not reviewed (nothing saved).
+    """
+    try:
+        return _generate(db_path, out_dir, target, client, review_enabled)
+    except (LLMError, WriterFailed) as error:
+        print(f"error: {_printable(str(error))}", file=sys.stderr)
+        return 1
+    finally:
+        print(client.usage_line())
+
+
+def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool) -> int:
+    store = _open_existing(db_path)
+    if store is None:
+        return 2
+    with store:
+        state = run_digest(store, target, client, review_enabled=review_enabled)
+        digest, review = state.digest, state.review
+        if digest is None:  # a quiet day, or a draft that could not be repaired
+            _print_review(state)
+            return 1 if review and review.status == "failed" else 0
+        if review.status == "unreviewed":
+            print("NOT SAVED: this digest has not been reviewed and must not be published.\n")
+            print(_printable(render_markdown(digest)))
+            _print_review(state)
+            return 3
+        problems = validate_digest(digest, state.items)
+        if problems:
+            for problem in problems:
+                print(f"error: the digest was not saved: {problem}", file=sys.stderr)
+            return 1
+        published = PublishedDigest(
+            digest=digest, provenance=provenance_for(state.draft),
+            usage=UsageRecord(
+                model=client.model, calls=client.calls, input_tokens=client.input_tokens,
+                output_tokens=client.output_tokens, usd=client.spent,
+                unknown_usage_attempts=client.unknown_usage_attempts,
+            ),
+        )
+        try:
+            path = save_digest(out_dir, published)
+        except AlreadyExists as exists:
+            print(_printable(f"ALREADY_EXISTS: {exists.path}"))
+            return 0
+        except OSError as error:
+            reason = os.strerror(error.errno) if error.errno else "I/O error"
+            print(
+                f"error: the digest could not be saved ({reason}); nothing was written and no items were marked seen",
+                file=sys.stderr,
+            )
+            return 1
+        index_notes = _refresh_index(out_dir)
+        try:
+            store.mark_seen(state.items, target)
+        except Exception:  # noqa: BLE001 - whatever the database says, the files are already saved
+            print(
+                _printable(f"error: the digest was saved to {path}, but the seen-items ledger was not "
+                           "updated; the next digest may repeat these items"),
+                file=sys.stderr,
+            )
+            return 1
+    print(_printable(f"Saved {path}"))
+    _print_review(state)
+    for note in index_notes:
+        print(_printable(note))
+    return 0
+
+
+def _refresh_index(out_dir: Path) -> list[str]:
+    try:
+        return rebuild_index(out_dir)
+    except OSError:
+        return ["index: could not be rebuilt; it is rebuilt from the saved files on the next save"]
 
 
 class _PrintableFormatter(logging.Formatter):
@@ -247,7 +328,36 @@ def main() -> None:
         "--no-review", action="store_true",
         help="skip the Reviewer (cheaper; the digest is marked NOT REVIEWED and the exit code is 3)",
     )
+    g = sub.add_parser("generate", help="make yesterday's digest for real: review it, save it, mark its items seen")
+    g.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
+    g.add_argument("--out-dir", type=Path, default=None, help="where digests go (default: newsletters/ in the project)")
+    g.add_argument(
+        "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",
+        help="digest day, local time, earlier than today (default: yesterday)",
+    )
+    g.add_argument("--debug", action="store_true", help="log every model call and review round to stderr")
+    g.add_argument(
+        "--no-review", action="store_true",
+        help="skip the Reviewer; nothing is saved and the exit code is 3 (to test the pipeline cheaply)",
+    )
     args = parser.parse_args()
+    if args.command == "generate":
+        target = args.date or date.today() - timedelta(days=1)
+        if target >= date.today():
+            print("error: --date must be earlier than today", file=sys.stderr)
+            raise SystemExit(2)
+        out_dir = args.out_dir or DEFAULT_NEWSLETTERS_DIR
+        existing = digest_path(out_dir, target)
+        if existing.exists():  # before any key check or model spend
+            print(_printable(f"ALREADY_EXISTS: {existing}"))
+            raise SystemExit(0)
+        client = _build_client(DEFAULT_SETTINGS_PATH)
+        if client is None:
+            raise SystemExit(2)
+        with _debug_logging(args.debug):
+            raise SystemExit(
+                run_generate(args.db or data_dir() / "digest.db", out_dir, target, client, not args.no_review)
+            )
     if args.command == "draft":
         target = args.date or date.today() - timedelta(days=1)
         client = None

@@ -58,7 +58,8 @@ the system adds citations itself.
 
 _STYLE_RULES = f"""\
 Direct quotes must be `quote` sentences written with double quotation marks “like this”; never use \
-other quotation marks around passages. The headline may use only facts stated in your sentences.
+other quotation marks around passages. The headline may use only facts stated in your sentences. \
+Never use the characters < or >; write "under" or "over" instead.
 
 Style: neutral, concise, executive tone for a time-poor C-level reader. No hype, marketing \
 language, emoji, or unexplained acronyms. Short paragraphs. The two sections together are \
