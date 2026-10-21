@@ -5,6 +5,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx2
 import pytest
 
 from api_helpers import APPROVE, FAKE_KEY, blocked, script
@@ -591,12 +592,33 @@ def test_run_stops_with_a_retriable_error_when_no_feed_could_be_read(monkeypatch
 
 
 def test_run_says_so_when_retrying_will_not_help(monkeypatch, env, stages, capsys):
-    failing_feeds(monkeypatch, stages, ErrorCode.FEED_UNREACHABLE, ErrorCode.ROBOTS_DISALLOWED)
+    failing_feeds(monkeypatch, stages, ErrorCode.ROBOTS_DISALLOWED, ErrorCode.FEED_INVALID)
     script(monkeypatch, [])
     assert run_cli(monkeypatch, env) == 2
     err = capsys.readouterr().err
-    assert "retrying will not fix: Feed1 (ROBOTS_DISALLOWED)" in err and "Feed0" not in err
+    assert "retrying will not fix: Feed0 (ROBOTS_DISALLOWED), Feed1 (FEED_INVALID)" in err
     assert stages == ["ingest"]
+
+
+def test_one_feed_failing_for_a_passing_reason_stops_the_run_even_if_others_were_read(monkeypatch, env, stages, capsys):
+    reports = [FeedReport(source="Good"), FeedReport(source="Flaky", error=ErrorCode.FEED_UNREACHABLE),
+               FeedReport(source="Blocked", error=ErrorCode.ROBOTS_DISALLOWED)]
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: stages.append("ingest") or reports)
+    queue = script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "1 of 3 feeds could not be read: Flaky (FEED_UNREACHABLE)" in err and "run the same command again" in err
+    assert "Retrying will not fix: Blocked (ROBOTS_DISALLOWED)" in err
+    assert stages == ["ingest"] and len(queue) == 2 and files(env[1]) == []
+
+
+def test_a_feed_that_fails_for_a_lasting_reason_is_skipped_with_a_warning(monkeypatch, env, stages, capsys):
+    reports = [FeedReport(source="Good"), FeedReport(source="Blocked", error=ErrorCode.ROBOTS_DISALLOWED)]
+    monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: stages.append("ingest") or reports)
+    script(monkeypatch, [make_draft(300), APPROVE])
+    assert run_cli(monkeypatch, env) == 0
+    assert "skipping feeds that cannot be read: Blocked (ROBOTS_DISALLOWED)" in capsys.readouterr().err
+    assert "2026-10-14.md" in files(env[1])
 
 
 def test_run_with_no_enabled_feeds_is_a_setup_error(monkeypatch, env, stages, capsys):
@@ -625,3 +647,34 @@ def test_run_passes_generates_exit_code_through(monkeypatch, env, stages):
     script(monkeypatch, [make_draft(300)])
     assert run_cli(monkeypatch, env, "--no-review") == 3
     assert files(env[1]) == []
+
+
+@pytest.mark.parametrize(
+    "reply, advice",
+    [
+        (httpx2.Response(401, json={"error": {"message": "no"}}), "Retrying will not help until the cause is fixed"),
+        (httpx2.Response(400, json={"error": {"message": "no"}}), "Retrying will not help until the cause is fixed"),
+    ],
+)
+def test_a_permanent_model_error_says_a_retry_will_not_help(monkeypatch, env, capsys, reply, advice):
+    script(monkeypatch, [reply])
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "the model API returned HTTP" in err and advice in err and "Nothing was saved." in err
+    assert files(env[1]) == []
+
+
+def test_a_transient_model_error_that_outlasts_the_retries_says_it_may_be_temporary(monkeypatch, env, capsys):
+    monkeypatch.setattr("daily_digest.llm.metered.time.sleep", lambda seconds: None)
+    script(monkeypatch, [httpx2.Response(503, json={})] * 3)
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "HTTP 503" in err and "This may be temporary: run the same command again." in err
+    assert files(env[1]) == [] and seen_rows(env[0]) == 0
+
+
+def test_a_draft_the_model_gets_wrong_twice_says_a_retry_may_work(monkeypatch, env, capsys):
+    script(monkeypatch, [make_draft(199), make_draft(199)])
+    assert generate(monkeypatch, env) == 1
+    err = capsys.readouterr().err
+    assert "A retry may work" in err and "spends another run's budget" in err

@@ -28,7 +28,7 @@ from .extract import extract_articles
 from .fetch import HttpFetcher, user_agent
 from .graph import DigestState, day_window, run_digest
 from .ingest import FeedReport, ingest
-from .llm import LLMClient, LLMError, MeteredClient
+from .llm import BudgetExceeded, LLMClient, LLMError, MeteredClient, OutputInvalidError, TransientLLMError
 from .publisher import AlreadyExists, digest_path, provenance_for, rebuild_index, save_digest, validate_digest
 from .robots import RobotsChecker
 from .store import DatabaseNotFound, Store
@@ -211,10 +211,21 @@ def run_generate(
     try:
         return _generate(db_path, out_dir, target, client, review_enabled)
     except (LLMError, WriterFailed) as error:
-        print(f"error: {_printable(str(error))}", file=sys.stderr)
+        print(f"error: {_printable(str(error))}. {_retry_advice(error)}", file=sys.stderr)
         return 1
     finally:
         print(client.usage_line())
+
+
+def _retry_advice(error: Exception) -> str:
+    """Whether running the command again can help, and what it may cost. Nothing was saved either way."""
+    if isinstance(error, TransientLLMError):
+        return "This may be temporary: run the same command again. Nothing was saved; the usage line shows what this run spent."
+    if isinstance(error, (OutputInvalidError, WriterFailed)):
+        return "A retry may work, since the model's output varies, but it spends another run's budget. Nothing was saved."
+    if isinstance(error, BudgetExceeded):
+        return "A retry will hit the same cap unless the settings or the day's items change. Nothing was saved."
+    return "Retrying will not help until the cause is fixed (key, settings or request). Nothing was saved."
 
 
 def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool) -> int:
@@ -274,26 +285,43 @@ def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient,
     return 0
 
 
-# Ways a feed read can fail that a later run may not hit again. A non-200 answer is reported as
-# FEED_UNREACHABLE too, so a permanently dead URL also lands here; the message says "may".
+# A non-200 answer is reported as FEED_UNREACHABLE too, so a permanently dead URL also counts as
+# retriable; the messages say "may".
 RETRIABLE_FEED_ERRORS = frozenset({ErrorCode.FEED_UNREACHABLE})
 
 
-def _no_feed_message(reports: list[FeedReport]) -> str:
-    """Why a run with no readable feed stopped, and whether running it again can help."""
+def _named(reports: list[FeedReport]) -> str:
+    return ", ".join(f"{r.source} ({r.error})" for r in reports)
+
+
+def _feed_stop(reports: list[FeedReport]) -> tuple[str, int] | None:
+    """Why the job must stop after ingest, with its exit code, or None when it can go on.
+
+    A feed that failed for a passing reason would leave a hole in a digest that cannot be redone
+    (a saved digest blocks the rerun), so it stops the job. A feed that fails for a lasting reason
+    would block every day, so it is reported and skipped.
+    """
     if not reports:
-        return "error: no feeds are enabled in the feed list. Retrying will not help: add or enable a feed."
-    fixes = [r for r in reports if r.error not in RETRIABLE_FEED_ERRORS]
-    if not fixes:
-        return (
-            "error: no feed could be read (network or server trouble). This may be temporary: run the same "
-            "command again. Nothing was saved and no model was called, so a retry for the same day starts clean."
+        return "error: no feeds are enabled in the feed list. Retrying will not help: add or enable a feed.", 2
+    failed = [r for r in reports if r.error is not None]
+    passing = [r for r in failed if r.error in RETRIABLE_FEED_ERRORS]
+    lasting = [r for r in failed if r.error not in RETRIABLE_FEED_ERRORS]
+    if passing:
+        text = (
+            f"error: {len(passing)} of {len(reports)} feeds could not be read: {_named(passing)}. "
+            "This may be temporary: run the same command again. Nothing was saved and no model was "
+            "called, so a retry for the same day starts clean."
         )
-    names = ", ".join(f"{r.source} ({r.error})" for r in fixes)
-    return (
-        f"error: no feed could be read, and retrying will not fix: {names}. "
-        "Change the feed list or the feeds themselves. Nothing was saved and no model was called."
-    )
+        if lasting:
+            text += f" Retrying will not fix: {_named(lasting)}; change the feed list for those."
+        return text, 1
+    if len(lasting) == len(reports):
+        return (
+            f"error: no feed could be read, and retrying will not fix: {_named(lasting)}. "
+            "Change the feed list or the feeds themselves. Nothing was saved and no model was called.",
+            2,
+        )
+    return None
 
 
 def run_pipeline(
@@ -302,16 +330,19 @@ def run_pipeline(
 ) -> int:
     """The whole daily job in order: ingest, extract, then generate. Stops at the first stage that cannot go on.
 
-    If no feed could be read, stored items would be stale, so the job stops before any page fetch or
-    model spend: exit 1 when a retry may work, exit 2 when the feed setup must change. A failed extract
-    only costs the digest its full text, so the job goes on. Otherwise the exit code is generate's.
+    Ingest stops the job before any page fetch or model spend when its items would be stale or
+    incomplete: exit 1 when a retry may work, exit 2 when the feed setup must change. A failed
+    extract only costs the digest its full text, so the job goes on. Otherwise the exit code is
+    generate's.
     """
     print("== ingest ==")
     reports = _ingest_reports(db_path, feeds_path)
-    if not any(r.error is None for r in reports):
-        retriable = bool(reports) and all(r.error in RETRIABLE_FEED_ERRORS for r in reports)
-        print(_printable(_no_feed_message(reports)), file=sys.stderr)
-        return 1 if retriable else 2
+    if stop := _feed_stop(reports):
+        print(_printable(stop[0]), file=sys.stderr)
+        return stop[1]
+    lasting = [r for r in reports if r.error is not None]
+    if lasting:
+        print(_printable(f"warning: skipping feeds that cannot be read: {_named(lasting)}"), file=sys.stderr)
     print("\n== extract ==")
     days = (date.today() - target).days + 1  # reaches back to the digest day
     if run_extract(db_path, None, days) != 0:
