@@ -39,7 +39,7 @@ The run id is the UTC time plus the git commit; results go to `evals/results/<ru
 
 ```
 uv run daily-digest ingest                    # read the feeds into the local database
-uv run daily-digest extract                   # fetch full text for items whose feed text is short, teaser-like or cut at the extract limit (--days N: how far back, default 2)
+uv run daily-digest extract                   # (only from each feed's allowed domains in config/feeds.toml) fetch full text for items whose feed text is short, teaser-like or cut at the extract limit (--days N: how far back, default 2)
 uv run daily-digest draft --stub              # offline placeholder summaries; no key needed
 uv run daily-digest draft [--date YYYY-MM-DD] # writes the day's digest as Markdown, then a Reviewer checks it (at least two model calls)
 uv run daily-digest draft --debug             # also log every model call and review round (counts and dollars, never text or keys) to stderr
