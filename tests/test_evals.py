@@ -9,7 +9,7 @@ import pytest
 
 from daily_digest import cli
 from daily_digest.config import DEFAULT_NEWSLETTERS_DIR, load_eval_settings, load_llm_settings
-from daily_digest.contracts import Draft
+from daily_digest.contracts import Draft, ReviewIssue, ReviewResult
 from daily_digest.evals import runner
 from daily_digest.evals.cases import CaseError, load_case, load_cases, snapshot_day
 from daily_digest.evals.judge import JudgeFailed, judge_digest, judge_system_prompt
@@ -17,6 +17,7 @@ from daily_digest.evals.models import Case, CoversMust, JudgeScore, JudgeVerdict
 from daily_digest.evals.rubric import RubricError, load_rubric
 from daily_digest.evals.scripted import HEADLINE, ScriptedClient
 from daily_digest.llm import MeteredClient
+from daily_digest.llm.base import LLMResult, PermanentLLMError, Usage
 from daily_digest.llm.mock import MockClient
 from daily_digest.store import Store
 from helpers import editor_items
@@ -306,7 +307,134 @@ def test_recorded_errors_hold_no_item_judge_or_key_text(tmp_path):
     assert results.cases[0].status == "error" and results.cases[0].error == "the model API returned HTTP 401"
     short = Failing("Draft", OutputInvalidError("x", raw_text=secret))
     results, _ = run([small_case()], tmp_path, factory=lambda m: short, run_id="c")
-    assert results.cases[0].error == "the writer could not produce a valid draft" and secret not in results.model_dump_json()
+    assert results.cases[0].error.startswith("the model's draft failed the checks twice") and secret not in results.model_dump_json()
+
+
+class ShortWriter(ScriptedClient):
+    """A writer whose draft is too short, every time."""
+
+    def complete(self, *, system, messages, schema, max_tokens):
+        result = super().complete(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
+        if schema is Draft:
+            draft = result.parsed
+            draft.what_you_need_to_know, draft.worth_a_closer_look = draft.what_you_need_to_know[:1], draft.worth_a_closer_look[:1]
+        return result
+
+
+class BlockingReviewer(ScriptedClient):
+    """Every review finds the same blocking issue."""
+
+    def __init__(self, section, index, change="Remove the unsupported claim."):
+        self.section, self.index, self.change = section, index, change
+
+    def complete(self, *, system, messages, schema, max_tokens):
+        if schema is ReviewResult:
+            issue = ReviewIssue(section=self.section, index=self.index, severity="blocking", category="unsupported", required_change=self.change)
+            return LLMResult(ReviewResult(issues=[issue]), Usage(input_tokens=1000, output_tokens=200))
+        return super().complete(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
+
+
+def folder_of(results, run_dir, case_id="small"):
+    return run_dir / case_id, results.cases[0]
+
+
+def test_a_writer_that_fails_its_checks_leaves_the_reasons_in_the_folder_results_and_summary(tmp_path):
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: ShortWriter())
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "error" and "failed the checks twice" in case.error and "words; they must have 200 to 500" in case.error
+    assert (folder / "failure.txt").read_text() == f"error: {case.error}\n" and case.failure == f"error: {case.error}"
+    assert json.loads((run_dir / "results.json").read_text())["cases"][0]["failure"] == case.failure
+    summary = (run_dir / "summary.md").read_text()
+    assert "failed the checks twice" in summary and "## Why cases did not pass" in summary
+
+
+def test_a_blocking_headline_issue_that_survives_every_round_is_explained_in_the_folder(tmp_path):
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: BlockingReviewer("headline", None, "Soften\x1b[31m it."))
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "failed"
+    failure = (folder / "failure.txt").read_text()
+    assert "review: FAILED after 3 round(s)" in failure and "unresolved: headline (unsupported): Soften" in failure
+    assert "cannot be fixed by removing a sentence" in failure and "\x1b" not in failure
+    review = (folder / "review.txt").read_text()
+    assert review.count("== round") == 6 and "- blocking unsupported at headline: Soften" in review and "\x1b" not in review
+    assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == HEADLINE
+    notes = (folder / "notes.txt").read_text().splitlines()
+    assert len(notes) == len(set(notes))  # each note once
+    assert "unresolved: headline" in (run_dir / "summary.md").read_text()
+
+
+def test_a_case_that_never_converges_records_the_unresolved_issue_and_every_round(tmp_path):
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: BlockingReviewer("what_you_need_to_know", 0))
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "not_converged" and (folder / "digest.md").is_file()
+    assert "review: not converged after 3 round(s)" in case.failure and "unresolved: what_you_need_to_know sentence 1" in case.failure
+    assert (folder / "review.txt").read_text().count("== round") == 6 and (folder / "draft.json").is_file()
+
+
+class Versioned(BlockingReviewer):
+    """Each draft the writer or reviser returns gets a new version number in its headline."""
+
+    def __init__(self, *args, fail_revision=False):
+        super().__init__(*args)
+        self.drafts, self.fail_revision = 0, fail_revision
+
+    def complete(self, *, system, messages, schema, max_tokens):
+        result = super().complete(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
+        if schema is Draft:
+            self.drafts += 1
+            if self.drafts == 2 and self.fail_revision:
+                raise PermanentLLMError("the model API returned HTTP 400")
+            result.parsed.headline = f"{result.parsed.headline} v{self.drafts}"
+        return result
+
+
+def test_the_saved_draft_and_last_review_block_are_the_last_draft_the_reviewer_judged(tmp_path):
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: Versioned("what_you_need_to_know", 0))
+    folder, case = folder_of(results, run_dir)
+    assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == f"{HEADLINE} v3"
+    review = (folder / "review.txt").read_text()
+    assert f"headline: {HEADLINE} v1" in review and review.rindex("== round 3: draft reviewed ==") > review.index(f"{HEADLINE} v2")
+
+
+def test_a_failed_revision_is_explained_and_the_draft_is_the_one_the_reviewer_judged(tmp_path):
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: Versioned("what_you_need_to_know", 0, fail_revision=True))
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "not_converged" and "the revision failed: the model API returned HTTP 400" in case.failure
+    assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == f"{HEADLINE} v1"
+    assert (folder / "review.txt").read_text().count("== round") == 2
+
+
+def test_a_degraded_case_explains_why_the_budget_stopped_the_loop(tmp_path):
+    cap = SETTINGS.model_copy(update={"max_usd_per_run": Decimal("0.08")})
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: BlockingReviewer("what_you_need_to_know", 0), settings=cap)
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "degraded" and "review: degraded at 80% of the budget" in (folder / "failure.txt").read_text()
+    assert (folder / "draft.json").is_file() and (folder / "review.txt").is_file()
+
+
+def test_an_unreviewed_case_says_no_review_ran_and_keeps_the_writers_draft(tmp_path):
+    refused = Failing("ReviewResult", PermanentLLMError("the model API returned HTTP 401"))
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: refused)
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "unreviewed" and "the reviewer could not run: the model API returned HTTP 401" in case.failure
+    assert (folder / "review.txt").read_text() == "(no model review ran)\n"
+    assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == HEADLINE and case.judge is None
+
+
+def test_text_in_a_failure_cannot_close_the_summary_fence_or_forge_a_log_header(tmp_path):
+    from daily_digest.evals.report import render_report
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: BlockingReviewer("headline", None, "Nope ``` <b>x</b>"))
+    results.cases[0].failure += "\n```\nforged"
+    text = render_report(results)
+    assert text.count("\n" + "`" * 6 + "\n") == 2  # a fence longer than the longest run inside the text
+    folder = run_dir / "small"
+    assert all(line.startswith("== round") or not line.startswith("== ") for line in (folder / "review.txt").read_text().splitlines())
+
+
+def test_an_approved_case_has_no_failure_files(tmp_path):
+    results, run_dir = run([small_case()], tmp_path)
+    folder, case = folder_of(results, run_dir)
+    assert case.failure is None and not (folder / "failure.txt").exists() and not (folder / "review.txt").exists()
 
 
 def test_more_than_720_items_still_land_on_the_case_day():

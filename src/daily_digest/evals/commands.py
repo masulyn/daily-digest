@@ -16,6 +16,7 @@ from .report import (
 )
 from .rubric import RubricError, load_rubric
 from .runner import git_state, make_run_id, run_eval
+from .terminal import printable
 from .scripted import ScriptedClient
 
 DEFAULT_EVALS_DIR = PROJECT_ROOT / "evals"
@@ -23,9 +24,7 @@ EXIT_CAP = 4
 
 
 def _say(text: str, *, error: bool = False) -> None:
-    from ..cli import _printable  # imported late: cli imports this module only when `eval` runs
-
-    print(_printable(text), file=sys.stderr if error else sys.stdout)
+    print(printable(text), file=sys.stderr if error else sys.stdout)
 
 
 def _paths(args) -> tuple[Path, Path]:

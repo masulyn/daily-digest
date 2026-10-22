@@ -10,6 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from ..config import PROJECT_ROOT, EvalSettings, LLMSettings
+from ..contracts import Draft, ReviewRound
 from ..digest import render_markdown
 from ..editor import REVISE_PROMPT, SYSTEM_PROMPT, WriterFailed, render_items, word_count
 from ..graph import DigestState, run_digest
@@ -21,6 +22,7 @@ from .judge import JudgeFailed, judge_digest, judge_system_prompt
 from .models import Case, CaseResult, RunConfig, RunResults
 from .report import render_report
 from .rubric import Rubric
+from .terminal import printable, review_lines
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +79,35 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _failure_text(state: DigestState) -> str:
+    """The review block and notes exactly as `draft` prints them, each note once."""
+    lines = [*review_lines(state.review)] if state.review else []
+    return printable("\n".join([*lines, *dict.fromkeys(state.notes)]))
+
+
+def _draft_lines(draft: Draft) -> list[str]:
+    lines = [f"headline: {' '.join(draft.headline.split())}"]
+    for section in ("what_you_need_to_know", "worth_a_closer_look"):
+        for index, s in enumerate(getattr(draft, section)):
+            cites = ", ".join(s.item_ids) or "none"
+            lines.append(f"[{section} {index}] ({s.type}; cites: {cites}) {' '.join(s.text.split())}")
+    return lines
+
+
+def _review_log(rounds: list[ReviewRound]) -> str:
+    """Each round's draft and the issues found, so a case that never converged can be read without a rerun."""
+    lines: list[str] = []
+    for r in rounds:
+        lines += [f"== round {r.number}: draft reviewed ==", *_draft_lines(r.draft), "", f"== round {r.number}: issues =="]
+        for i in r.issues:
+            where = i.section if i.index is None else f"{i.section} {i.index}"
+            lines.append(f"- {i.severity} {i.category} at {where}: {' '.join(i.required_change.split())}")
+        if not r.issues:
+            lines.append("(none)")
+        lines.append("")
+    return printable("\n".join(lines))
+
+
 def run_case(
     case: Case, *, settings: LLMSettings, eval_settings: EvalSettings, rubric: Rubric, factory: ClientFactory,
     judge_model: str, judge_enabled: bool, budget_left: Decimal, case_dir: Path,
@@ -96,16 +127,25 @@ def run_case(
         except (LLMError, WriterFailed) as error:
             record_pipeline_cost()
             result.status = "error"
-            # LLMError text is built from the status only; the writer's failure text is replaced.
-            result.error = str(error) if isinstance(error, LLMError) else "the writer could not produce a valid draft"
+            # The checks that failed are fixed wording; neither message echoes the model's reply.
+            result.error = printable(str(error))
+            result.failure = f"error: {result.error}"
+            _write(case_dir / "failure.txt", result.failure + "\n")
             return result
     record_pipeline_cost()
-    _write(case_dir / "notes.txt", "\n".join(state.notes) + "\n")
+    _write(case_dir / "notes.txt", "\n".join(dict.fromkeys(state.notes)) + "\n")
     review, digest = state.review, state.digest
     if review is not None:
         result.status = review.status
         result.review_rounds, result.sentences_removed = review.rounds, review.removed
     result.dropped_sentence_notes = sum(1 for n in state.notes if _DROPPED.match(n))
+    if review is not None and review.status != "approved":
+        result.failure = _failure_text(state)
+        _write(case_dir / "failure.txt", result.failure + "\n")
+        last = state.review_rounds[-1].draft if state.review_rounds else state.draft
+        if last is not None:
+            _write(case_dir / "draft.json", last.model_dump_json(indent=2) + "\n")
+        _write(case_dir / "review.txt", _review_log(state.review_rounds) or "(no model review ran)\n")
     if digest is None or state.draft is None:
         return result
 

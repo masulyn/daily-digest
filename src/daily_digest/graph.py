@@ -12,7 +12,7 @@ from typing import Annotated
 from langgraph.graph import END, START, StateGraph
 from pydantic import AwareDatetime, BaseModel
 
-from .contracts import CandidateItem, Draft, FinalDigest, ItemSummary, ReviewSummary
+from .contracts import CandidateItem, Draft, FinalDigest, ItemSummary, ReviewRound, ReviewSummary
 from .digest import build_digest
 from .editor import MIN_ITEMS, fit_items, write_draft
 from .llm import BudgetedClient
@@ -31,6 +31,7 @@ class DigestState(BaseModel):
     sent_items: list[CandidateItem] = []  # the items the Writer was shown, after fit_items
     digest: FinalDigest | None = None
     review: ReviewSummary | None = None
+    review_rounds: list[ReviewRound] = []  # what each model review saw and found
     notes: Annotated[list[str], operator.add] = []  # non-fatal; nodes return only new notes
 
 
@@ -86,13 +87,16 @@ def review(state: DigestState, client: BudgetedClient, enabled: bool) -> dict:
         return {}
     outcome = run_review(state.draft, state.sent_items, client, enabled=enabled)
     if outcome.draft is None:
-        return {"review": outcome.summary, "notes": outcome.notes}
+        return {"review": outcome.summary, "review_rounds": outcome.rounds, "notes": outcome.notes}
     # The digest keeps every note of the run; the state's own notes only gain this step's.
     digest = build_digest(
         outcome.draft, state.sent_items, state.target_date, state.generated_at,
         [*state.notes, *outcome.notes], outcome.summary,
     )
-    return {"draft": outcome.draft, "digest": digest, "review": outcome.summary, "notes": outcome.notes}
+    return {
+        "draft": outcome.draft, "digest": digest, "review": outcome.summary,
+        "review_rounds": outcome.rounds, "notes": outcome.notes,
+    }
 
 
 def build_graph(store: Store, client: BudgetedClient | None = None, *, review_enabled: bool = False):

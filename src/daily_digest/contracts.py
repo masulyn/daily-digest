@@ -105,6 +105,14 @@ class ReviewResult(BaseModel):
     verdict: Literal["approve", "revise"] = "revise"
 
 
+class ReviewRound(BaseModel):
+    """One model review: the draft that was judged and every issue found (mechanical and model)."""
+
+    number: int = Field(ge=1)
+    draft: Draft
+    issues: list[ReviewIssue]
+
+
 class ReviewSummary(BaseModel):
     status: ReviewStatus
     rounds: int = Field(default=0, ge=0)  # model reviews that ran

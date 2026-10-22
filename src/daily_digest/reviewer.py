@@ -7,7 +7,7 @@ approval, code removes the flagged sentences instead of asking the model again.
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from .contracts import (
     CandidateItem,
@@ -16,6 +16,7 @@ from .contracts import (
     DraftSentence,
     ReviewIssue,
     ReviewResult,
+    ReviewRound,
     ReviewSummary,
     SectionName,
 )
@@ -90,6 +91,7 @@ class ReviewOutcome:
     draft: Draft | None  # None when the status is failed
     summary: ReviewSummary
     notes: list[str]
+    rounds: list[ReviewRound] = field(default_factory=list)  # what each model review saw and found
 
 
 def _category_for(reason: str) -> str:
@@ -275,6 +277,7 @@ def run_review(
     _, sent = render_items(sent_items)
     notes: list[str] = []
     current, rounds = draft, 0
+    history: list[ReviewRound] = []
     reviewed: tuple[Draft, list[ReviewIssue]] | None = None
     stop = "rounds"  # why the loop ended without approval: rounds, budget, reviewer or revision
     for round_no in range(1, client.max_review_rounds + 1):
@@ -296,6 +299,7 @@ def run_review(
         issues = mechanical + model_issues
         blocking = [i for i in issues if i.severity == "blocking"]
         reviewed = (current, issues)
+        history.append(ReviewRound(number=rounds, draft=current, issues=issues))
         log.debug(
             "review round %d mechanical=%d model=%d blocking=%d status=%s cumulative_usd=%s",
             round_no, len(mechanical), len(model_issues), len(blocking),
@@ -303,7 +307,7 @@ def run_review(
         )
         if not blocking:
             advisory = [_issue_text(current, i) for i in issues]
-            return ReviewOutcome(current, ReviewSummary(status="approved", rounds=rounds, advisory=advisory), notes)
+            return ReviewOutcome(current, ReviewSummary(status="approved", rounds=rounds, advisory=advisory), notes, history)
         if round_no == client.max_review_rounds:
             break
         if client.degraded():
@@ -327,4 +331,4 @@ def run_review(
         return ReviewOutcome(draft, ReviewSummary(status="unreviewed"), notes)
     last_draft, last_issues = reviewed
     status = "degraded" if stop == "budget" else "not_converged"
-    return _fallback(last_draft, last_issues, sent, status, rounds, notes)
+    return replace(_fallback(last_draft, last_issues, sent, status, rounds, notes), rounds=history)
