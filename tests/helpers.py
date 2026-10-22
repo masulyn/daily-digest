@@ -4,8 +4,13 @@ import json
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from daily_digest.contracts import CandidateItem, ErrorCode
+from daily_digest.contracts import CandidateItem, ErrorCode, Source
+from daily_digest.domains import safe_host
 from daily_digest.fetch import FetchError
+
+
+# The feed behind `sample_item`; some tests link to e.com instead.
+TEST_SOURCES = [Source(name="s", url="https://news.example.com/feed", category="test", allowed_domains=["example.com", "e.com"])]
 
 
 def sample_item(slug: str, extract: str = "") -> CandidateItem:
@@ -24,7 +29,9 @@ def guarded_fetch(responder):
     """
     calls: list[str] = []
 
-    def fetch(url, allow=None):
+    def fetch(url, allow=None, permit=None):
+        if permit is not None and not permit(url):
+            raise FetchError(ErrorCode.DOMAIN_NOT_ALLOWED, safe_host(url))
         if allow is not None and not allow(url):
             raise FetchError(ErrorCode.ROBOTS_DISALLOWED, url)
         calls.append(url)

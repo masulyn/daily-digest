@@ -5,14 +5,18 @@ from pathlib import Path
 import pytest
 
 from daily_digest import cli
-from daily_digest.extract import extract_articles
+from daily_digest import extract as extract_module
 from daily_digest.robots import RobotsChecker
 from daily_digest.store import _MIGRATIONS, Store
-from helpers import guarded_fetch, sample_item
+from helpers import TEST_SOURCES, guarded_fetch, sample_item
 
 PAGE = (Path(__file__).parent / "fixtures" / "article_page.html").read_bytes()
 NOON = datetime(2026, 10, 19, 12, tzinfo=timezone.utc)
 SINCE = NOON - timedelta(days=1)
+
+
+def extract_articles(*args, **kwargs):
+    return extract_module.extract_articles(*args, sources=TEST_SOURCES, **kwargs)
 
 
 def allow_all() -> RobotsChecker:
@@ -72,7 +76,7 @@ def test_since_is_local_midnight_of_the_first_day(today, days, first_day):
 
 def _run_cli(monkeypatch, tmp_path, *argv):
     calls = []
-    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: calls.append(days) or 0)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days, feeds=None: calls.append(days) or 0)
     monkeypatch.setattr("sys.argv", ["daily-digest", "extract", "--db", str(tmp_path / "x.db"), *argv])
     with pytest.raises(SystemExit) as exit_info:
         cli.main()

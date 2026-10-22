@@ -206,6 +206,11 @@ class Store:
             params += (limit,)
         return [(r[0], r[1]) for r in self._db.execute(sql, params).fetchall()]
 
+    def source_of(self, item_id: str) -> str | None:
+        """The name of the feed an item came from."""
+        row = self._db.execute("SELECT source FROM items WHERE id = ?", (item_id,)).fetchone()
+        return row[0] if row else None
+
     def save_article_text(self, item_id: str, text: str) -> None:
         self._db.execute(
             "UPDATE items SET article_text = ?, extraction_attempted_at = ?, extraction_error = NULL"

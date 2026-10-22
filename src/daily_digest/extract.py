@@ -9,17 +9,21 @@ pages are never forced. Permanent failures are recorded once. Temporary ones (ra
 server errors, timeouts) are retried on later runs, up to MAX_EXTRACTION_ATTEMPTS.
 """
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from .contracts import ErrorCode
+from .contracts import ErrorCode, Source
+from .domains import allowed_by_source, host_allowed, safe_host, safe_text
 from .fetch import BackoffError, FetchError, GuardedFetchFn
 from .normalize import make_extract
 from .robots import RobotsChecker
 from .store import Store
+
+log = logging.getLogger(__name__)
 
 MIN_ARTICLE_CHARS = 200  # less than this is a menu or error page, not an article
 MAX_ARTICLE_CHARS = 3000
@@ -113,21 +117,35 @@ def extract_articles(
     fetch: GuardedFetchFn,
     robots: RobotsChecker,
     *,
+    sources: list[Source],
     set_host_delay: Callable[[str, float], None] | None = None,
     limit: int | None = None,
     since: datetime | None = None,
 ) -> ExtractionReport:
-    """Extract text for items flagged at ingest that are still waiting for it."""
+    """Extract text for items flagged at ingest that are still waiting for it.
+
+    A page is fetched only from the feed's allowed domains, and a redirect to any other host ends the
+    attempt for good; the item keeps its feed text.
+    """
     report = ExtractionReport()
     allow = _guard(robots, set_host_delay)
+    allowed = allowed_by_source(sources)
     for item_id, url in store.pending_extraction(limit, since):
         report.considered += 1
+        feed = store.source_of(item_id)
+        if feed not in allowed:  # the feed was removed from the list; a restored entry makes it fetchable again
+            _record_failure(store, report, item_id, ErrorCode.DOMAIN_NOT_ALLOWED, final=False)
+            continue
         try:
-            status, body = fetch(url, allow=allow)
+            status, body = fetch(url, allow=allow, permit=lambda hop, domains=allowed[feed]: host_allowed(hop, domains))
         except BackoffError:
             report.deferred += 1
             continue
         except FetchError as e:
+            if e.code == ErrorCode.DOMAIN_NOT_ALLOWED:
+                log.warning("%s feed=%s host=%s", e.code, safe_text(feed), e)
+                _record_failure(store, report, item_id, e.code, final=True)
+                continue
             # Only a connection problem or timeout is worth trying again.
             temporary = e.code == ErrorCode.FEED_UNREACHABLE
             _record_failure(store, report, item_id, e.code, final=not temporary)

@@ -5,13 +5,16 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field, field_validator
+
+from .domains import normalize_domain
 
 
 class ErrorCode(StrEnum):
     FEED_UNREACHABLE = "FEED_UNREACHABLE"
     ROBOTS_DISALLOWED = "ROBOTS_DISALLOWED"
     UNSAFE_URL = "UNSAFE_URL"
+    DOMAIN_NOT_ALLOWED = "DOMAIN_NOT_ALLOWED"  # a link points to a host the feed is not allowed to link to
     FEED_INVALID = "FEED_INVALID"
     RESPONSE_TOO_LARGE = "RESPONSE_TOO_LARGE"
     SCHEMA_INVALID = "SCHEMA_INVALID"
@@ -25,6 +28,13 @@ class Source(BaseModel):
     url: str
     category: str
     enabled: bool = True
+    # Hosts this feed's links may point to, with their subdomains. Absent: the feed URL's own domain.
+    allowed_domains: list[str] | None = None
+
+    @field_validator("allowed_domains")
+    @classmethod
+    def _domains_are_bare_domains(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else [normalize_domain(entry) for entry in value]
 
 
 class CandidateItem(BaseModel):

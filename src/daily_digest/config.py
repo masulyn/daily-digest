@@ -21,10 +21,19 @@ class _FeedsFile(BaseModel):
 
 
 def load_sources(path: Path = DEFAULT_FEEDS_PATH) -> list[Source]:
-    """Return enabled sources. A bad file raises a validation error naming the key."""
+    """Return enabled sources. A bad entry raises SettingsError naming the feed and the key."""
     with open(path, "rb") as f:
         data = tomllib.load(f)
-    parsed = _FeedsFile.model_validate(data)
+    try:
+        parsed = _FeedsFile.model_validate(data)
+    except ValidationError as error:
+        first = error.errors(include_input=False)[0]
+        loc = first["loc"]
+        rows = data.get("feeds")
+        feed = rows[loc[1]].get("name") if loc[:1] == ("feeds",) and len(loc) > 1 and isinstance(rows, list) else None
+        key = ".".join(str(part) for part in loc[2:]) if feed is not None else ".".join(str(part) for part in loc)
+        who = f"feed {str(feed)!r}: " if feed is not None else ""
+        raise SettingsError(f"invalid feeds file {path.name}: {who}{key or 'feeds'}: {first['msg'].removeprefix('Value error, ')}") from None
     return [s for s in parsed.feeds if s.enabled]
 
 
