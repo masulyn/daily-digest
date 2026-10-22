@@ -6,7 +6,7 @@
 >
 > **Revision 2:** Generation is **on demand** and human-triggered (no scheduler). A digest covers one full local day (midnight to midnight); clicking Generate produces the previous day's digest, or links to it if it already exists. Content must be **truthful and source-grounded**; agents must never add their own opinions or unsourced claims (NFR-10).
 >
-> **Revision 3 (Oct 15, 2026):** Scope is cut to a CLI-first v1 that writes Markdown (the web UI is deferred to P2). The stack is decided: Python 3.12+ and LangGraph. The LLM layer is model-agnostic, with Claude Sonnet as the default (NFR-11). Cost caps are in dollars (NFR-8). There is no approval step before publishing: the only human step is running `generate`. Evals are a TODO (section 7). Reddit and other discussion feeds are out, and the feed list is the five tested starters (FR-1.3). Describing patterns across sources is allowed; agent commentary is not (NFR-10).
+> **Revision 3 (Oct 15, 2026):** Scope is cut to a CLI-first v1 that writes Markdown (the web UI is deferred to P2). The stack is decided: Python 3.12+ and LangGraph. The LLM layer is model-agnostic, with Claude Sonnet as the default (NFR-11). Cost caps are in dollars (NFR-8). There is no approval step before publishing: the only human step is running `generate`. Evals are in section 7. Reddit and other discussion feeds are out, and the feed list is the five tested starters (FR-1.3). Describing patterns across sources is allowed; agent commentary is not (NFR-10).
 
 ## 1. Product Summary & Vision
 
@@ -19,7 +19,7 @@
   | Metric | Target |
   |---|---|
   | Generation reliability | ≥ 95% of `generate` runs (with no prior digest for the day) end in a published digest; 100% end in a published digest or a clear failure message within the 30-minute hard limit |
-  | Source grounding (every sentence traceable to at least one fetched source item; zero editorial opinion, prediction, or recommendation originating from the agents) | 100% of published sentences (measured by the eval suite, section 7 TODO) |
+  | Source grounding (every sentence traceable to at least one fetched source item; zero editorial opinion, prediction, or recommendation originating from the agents) | 100% of published sentences (measured by the eval suite, section 7) |
   | Body length compliance (200–500 words, citations excluded) | 100% of published newsletters (except the defined quiet-day case, FR-6.5) |
   | Cross-day repetition (an item or story already reported in a prior newsletter) | 0 repeated source items; ≤ 1 repeated story angle per week |
   | Citation integrity (every citation URL appeared in that day's fetched set; every quote appears verbatim in its source) | 100% |
@@ -304,7 +304,7 @@
 
 ### 3.A Editorial Rubric (content of FR-1.4)
 
-**Relevance to the reader (used for scoring and selection):**
+**Relevance to the reader (used for scoring and selection; `evals/rubric.toml` holds the copy the eval judge uses):**
 - **High:** Enterprise adoption evidence (case studies, deployment outcomes, ROI/failure data), operating-model and org design for AI, governance/risk/regulation affecting enterprises, build-vs-buy and vendor/platform shifts, agent and workflow automation in business settings, workforce and skills change, cost and infrastructure economics, security incidents involving enterprise AI.
 - **Medium:** Major model or product releases (only with enterprise implications), significant research with near-term practical impact.
 - **Low / exclude:** Pure consumer gadget news, funding-round gossip without strategic implication, benchmark-leaderboard noise, undisclosed-sponsor promotions, speculation without evidence, content that is mostly opinion without new insight.
@@ -438,15 +438,19 @@ General: single-column, content-first, generous whitespace, readable body text a
 **Still open (defaults apply):**
 1. **Feed list:** Start with the five tested feeds (FR-1.3). Add must-include sources as needed; each must pass validation.
 
-## 7. Evaluation (TODO)
+## 7. Evaluation
 
-Placeholder. Evals will be built after the pipeline works end to end. Planned scope, to be refined:
-- A golden set of about 20 saved feed snapshots (fixtures, so tests do not hit live sites).
-- A rubric: faithfulness (grounding), coverage of the most important items, audience fit for enterprise AI leaders, and concision.
-- Automatic checks: citation integrity, verbatim quotes, word count, and no agent-originated opinion (FR-4.5).
-- An LLM judge, preferably a different model from the generator (NFR-11 makes this a config change), plus a human spot check.
-- A recorded baseline, and a regression run whenever the model, provider, prompt, or rubric changes.
-- The success metrics in section 1 that depend on this: source grounding, cross-day repetition, and model portability.
+**What exists (v1).** `daily-digest eval` measures digest quality on saved cases so a change to the model, a prompt or the rubric can be judged by numbers. It runs the real pipeline (`run_digest`) on each case loaded into a temporary store, then a second model judges the digest against a versioned rubric. It never writes to `newsletters/` or the seen ledger.
+- **Cases** (`evals/cases/*.json`, committed): 7 synthetic days with invented companies and original text (a normal day, a thin day, a two-item day that must give no digest, one story from three sources with two disagreeing, hedges and numbers and quotes, an off-topic day with a vendor press release, and an injection attempt with a canary string). Real days are exported with `eval snapshot` into `evals/snapshots/` (git-ignored, because they hold article text from other sites).
+- **Rubric** (`evals/rubric.toml`, versioned): faithfulness, coverage, audience fit and concision, each scored 1 to 5 with anchors. The audience and relevance tiers are the section 3.A text copied there as the eval's source of truth.
+- **Judge:** a different model from the generator (`[eval] judge_model` in `config/settings.toml`, default `claude-opus-5-5`), with its own metered client. It returns the four scores with a rationale each, the sentences it finds unsupported or overstated, and whether each `must_cover` item was used. Item text is untrusted data and appears only inside delimiters in the user message.
+- **Not repeated:** citations, verbatim quotes, word count, headline length, URLs and the no-opinion scan are already enforced by the Writer, Reviewer and Publisher. The eval reads the pipeline's own outcome (status, rounds, removed sentences, cost) as metrics instead.
+- **Reports:** `eval report` (cases, the weakest 3, common problem types, pipeline rates, cost), `eval baseline` (`evals/baseline.json`, committed), `eval compare` (per-dimension deltas, what changed in config and prompt hashes, flags for a drop of 0.5 or more, a new canary hit or a new failed day) and `eval spot-check` (random digests beside their sources for a human check of the judge).
+- **Cost:** an eval-wide cap `max_usd_per_eval` (default $2.00) covers generator and judge calls together. A full run of 10 cases is estimated at $1.20 to $1.60.
+
+**Limits.** Each case runs once and model output varies, so small differences are noise; `compare` flags size, not significance. The success metrics in section 1 that depend on this are measured only as far as the judge's faithfulness score and the pipeline's own checks go.
+
+**Remaining:** repeated runs and significance tests; a human-labelled golden set to check the judge against; topic repetition across days (cross-day repetition is not measured yet); a very large day (`fit_items` has unit tests only).
 
 ## 8. Definition of Done for the Build Sprint (Oct 15-23, 2026)
 

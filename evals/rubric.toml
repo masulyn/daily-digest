@@ -1,0 +1,57 @@
+# The rubric the judge model scores digests against. Bump `version` whenever any text below changes,
+# so a comparison can say the rubric moved. The audience and relevance tiers are the PRD section 3.A
+# text, copied here once as the eval's source of truth.
+
+version = "1"
+
+audience = """\
+Enterprise AI leaders (CAIO, VP or Head of AI, Director of AI Transformation) at large technology \
+companies. Time-poor, skeptical of hype, reading on a laptop or phone for about two minutes. They want \
+an executive tone and verifiable sourcing for any surprising claim."""
+
+[tiers]
+high = """\
+Enterprise adoption evidence (case studies, deployment outcomes, ROI or failure data), operating-model \
+and org design for AI, governance, risk and regulation affecting enterprises, build-versus-buy and \
+vendor or platform shifts, agent and workflow automation in business settings, workforce and skills \
+change, cost and infrastructure economics, security incidents involving enterprise AI."""
+medium = """\
+Major model or product releases (only with enterprise implications), significant research with \
+near-term practical impact."""
+exclude = """\
+Pure consumer gadget news, funding-round gossip without strategic implication, benchmark-leaderboard \
+noise, undisclosed-sponsor promotions, speculation without evidence, content that is mostly opinion \
+without new insight."""
+
+[dimensions.faithfulness]
+description = """\
+Every sentence is supported by the items it cites, at no greater strength. Hedges and attribution are \
+kept. The digest adds no outside knowledge, opinion, prediction or advice of its own."""
+anchor_1 = "Several sentences are unsupported, overstated, or carry the digest's own opinion or outside facts."
+anchor_3 = "Mostly supported, but one or two sentences are stronger than the source, lose a hedge, or blur who said what."
+anchor_5 = "Every sentence is supported at its source's strength; hedges and attribution are intact; no commentary of its own."
+
+[dimensions.coverage]
+description = """\
+The digest draws on the most important items for this audience (see the relevance tiers) without \
+padding. Where the case names items that a good digest should draw on, they are used."""
+anchor_1 = "Misses most of the important items, or fills the page with low-relevance or excluded material."
+anchor_3 = "Covers some important items but leaves out one that clearly matters, or includes a weak item over a strong one."
+anchor_5 = "Draws on the items that matter most to this reader, with nothing that belongs in the exclude tier."
+
+[dimensions.audience_fit]
+description = """\
+It is useful to this reader: decision-relevant, in the order that matters, with what happened and why it \
+matters to adoption stated only as the sources state it. Disagreements between sources are shown with \
+attribution and left unresolved. No promotional framing of a vendor."""
+anchor_1 = "Reads as news for a general audience, or repeats a vendor's framing, or hides a disagreement between sources."
+anchor_3 = "Relevant, but with some material that does not help a leader decide, or a thin treatment of a conflict."
+anchor_5 = "Every paragraph helps an enterprise AI leader decide something; conflicts are shown fairly; no vendor spin."
+
+[dimensions.concision]
+description = """\
+Executive tone, no hype or filler, no unexplained acronyms, short paragraphs, a headline about the single \
+most important development."""
+anchor_1 = "Wordy or hype-laden, with filler, jargon, or a headline that joins unrelated stories."
+anchor_3 = "Clear but with some padding, a long sentence, or an unexplained acronym."
+anchor_5 = "Tight, neutral and easy to scan in two minutes; the headline names one development."

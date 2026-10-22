@@ -1,0 +1,64 @@
+{
+  "id": "trend-and-conflict",
+  "category": "trend",
+  "description": "One story covered by three sources, two of which disagree about its effect, plus two unrelated items.",
+  "target_date": "2026-10-14",
+  "items": [
+    {
+      "id": "trend-and-conflict-1",
+      "source": "Platform Weekly",
+      "canonical_url": "https://news.example.com/trend-and-conflict/1",
+      "title": "Orrin Cloud raises inference prices by 30 percent",
+      "published": "2026-10-14T09:07:00+00:00",
+      "extract": "Orrin Cloud will raise the price of its managed inference service by 30 percent from January.",
+      "article_text": "Orrin Cloud will raise the price of its managed inference service by 30 percent from January. The company said the increase reflects higher hardware costs. Orrin said existing contracts keep their current price until renewal. A company spokesperson said the change affects about a third of its customers.",
+      "content_hash": "eval-trend-and-conflict-1"
+    },
+    {
+      "id": "trend-and-conflict-2",
+      "source": "The Enterprise Desk",
+      "canonical_url": "https://news.example.com/trend-and-conflict/2",
+      "title": "Customers expected to leave Orrin Cloud after price rise, analyst says",
+      "published": "2026-10-14T09:14:00+00:00",
+      "extract": "Analyst Mireille Dutta of Harbor Research said many customers will move workloads to other providers after Orrin Cloud's 30 percent price rise.",
+      "article_text": "Analyst Mireille Dutta of Harbor Research said many customers will move workloads to other providers after Orrin Cloud's 30 percent price rise. Dutta said, “Inference is the easiest part of the stack to move.” She estimated that one in four Orrin customers will start a migration within a year. Harbor Research said the estimate is based on a survey of 80 companies.",
+      "content_hash": "eval-trend-and-conflict-2"
+    },
+    {
+      "id": "trend-and-conflict-3",
+      "source": "Boardroom Briefing",
+      "canonical_url": "https://news.example.com/trend-and-conflict/3",
+      "title": "Few Orrin customers will switch, consultancy argues",
+      "published": "2026-10-14T09:21:00+00:00",
+      "extract": "Consultancy Fenwick Partners argued that few Orrin Cloud customers will switch providers despite the 30 percent price rise.",
+      "article_text": "Consultancy Fenwick Partners argued that few Orrin Cloud customers will switch providers despite the 30 percent price rise. Partner Ioan Prydderch said, “Moving inference means retesting every application, and most teams will not pay for that.” Fenwick estimated that fewer than one in twenty customers will migrate in the next year. The firm said its view is based on interviews with 15 technology leaders.",
+      "content_hash": "eval-trend-and-conflict-3"
+    },
+    {
+      "id": "trend-and-conflict-4",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/trend-and-conflict/4",
+      "title": "Marrow Insurance names a vendor review committee for AI contracts",
+      "published": "2026-10-14T09:28:00+00:00",
+      "extract": "Marrow Insurance has formed a committee to review all AI vendor contracts before renewal.",
+      "article_text": "Marrow Insurance has formed a committee to review all AI vendor contracts before renewal. Head of procurement Alison Tran said the committee will meet monthly. Marrow said it has 22 AI vendor contracts. The company did not link the committee to any single vendor.",
+      "content_hash": "eval-trend-and-conflict-4"
+    },
+    {
+      "id": "trend-and-conflict-5",
+      "source": "Compliance Dispatch",
+      "canonical_url": "https://news.example.com/trend-and-conflict/5",
+      "title": "Regulators publish guidance on AI vendor concentration",
+      "published": "2026-10-14T09:35:00+00:00",
+      "extract": "A national regulator published guidance asking regulated firms to report when a single provider supplies more than half of their AI workloads.",
+      "article_text": "A national regulator published guidance asking regulated firms to report when a single provider supplies more than half of their AI workloads. The guidance is not binding. Firms have until June to review their positions.",
+      "content_hash": "eval-trend-and-conflict-5"
+    }
+  ],
+  "must_cover": [
+    "trend-and-conflict-1",
+    "trend-and-conflict-2",
+    "trend-and-conflict-3"
+  ],
+  "canaries": []
+}

@@ -1,0 +1,74 @@
+{
+  "id": "hedges-numbers-quotes",
+  "category": "precision",
+  "description": "Items full of hedges, numbers and named-speaker quotes; the digest must keep each hedge and attribution.",
+  "target_date": "2026-10-14",
+  "items": [
+    {
+      "id": "hedges-numbers-quotes-1",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/hedges-numbers-quotes/1",
+      "title": "Northvale Bank reportedly plans to double its AI budget",
+      "published": "2026-10-14T09:07:00+00:00",
+      "extract": "Northvale Bank reportedly plans to double its AI budget next year, according to two people familiar with the plan.",
+      "article_text": "Northvale Bank reportedly plans to double its AI budget next year, according to two people familiar with the plan. The bank has not confirmed the figure. One of the people said the budget could reach 80 million dollars if the board approves it. A bank spokesperson said, “We do not comment on budget discussions.”",
+      "content_hash": "eval-hedges-numbers-quotes-1"
+    },
+    {
+      "id": "hedges-numbers-quotes-2",
+      "source": "The Enterprise Desk",
+      "canonical_url": "https://news.example.com/hedges-numbers-quotes/2",
+      "title": "Brindle Logistics expects savings of up to 18 million dollars",
+      "published": "2026-10-14T09:14:00+00:00",
+      "extract": "Brindle Logistics expects its dispatch agents to save up to 18 million dollars a year once they run at all depots, chief financial officer Helena Voss said.",
+      "article_text": "Brindle Logistics expects its dispatch agents to save up to 18 million dollars a year once they run at all depots, chief financial officer Helena Voss said. Voss said the estimate assumes current fuel prices and could change. “This is a forecast, not a result,” she said. So far the company has measured savings of 2.1 million dollars at one depot.",
+      "content_hash": "eval-hedges-numbers-quotes-2"
+    },
+    {
+      "id": "hedges-numbers-quotes-3",
+      "source": "Compliance Dispatch",
+      "canonical_url": "https://news.example.com/hedges-numbers-quotes/3",
+      "title": "Study finds 31 percent of surveyed firms lack an AI incident process",
+      "published": "2026-10-14T09:21:00+00:00",
+      "extract": "A survey of 412 large firms found that 31 percent have no process for handling an AI incident.",
+      "article_text": "A survey of 412 large firms found that 31 percent have no process for handling an AI incident. Survey author Kofi Mensah said the figure may understate the gap because respondents were self-selected. The survey was conducted online in September. Respondents were mostly from North America and Europe.",
+      "content_hash": "eval-hedges-numbers-quotes-3"
+    },
+    {
+      "id": "hedges-numbers-quotes-4",
+      "source": "Boardroom Briefing",
+      "canonical_url": "https://news.example.com/hedges-numbers-quotes/4",
+      "title": "Calder Health says AI notes may save clinicians an hour a day",
+      "published": "2026-10-14T09:28:00+00:00",
+      "extract": "Calder Health said its AI note-taking tool may save clinicians up to an hour a day.",
+      "article_text": "Calder Health said its AI note-taking tool may save clinicians up to an hour a day. Chief medical officer Esther Lindqvist said, “Early signs are encouraging, but we have only three months of data.” The tool is used by 220 clinicians. Calder said it has not yet measured whether note quality changed.",
+      "content_hash": "eval-hedges-numbers-quotes-4"
+    },
+    {
+      "id": "hedges-numbers-quotes-5",
+      "source": "Platform Weekly",
+      "canonical_url": "https://news.example.com/hedges-numbers-quotes/5",
+      "title": "Quillon AI says its model is 2.5 times faster, in its own tests",
+      "published": "2026-10-14T09:35:00+00:00",
+      "extract": "Quillon AI says its new model is 2.5 times faster than its predecessor in tests the company ran itself.",
+      "article_text": "Quillon AI says its new model is 2.5 times faster than its predecessor in tests the company ran itself. Chief technology officer Jun Watanabe said, “Your results will vary with your workload.” Quillon has not released the test data. The model is available to enterprise customers in preview.",
+      "content_hash": "eval-hedges-numbers-quotes-5"
+    },
+    {
+      "id": "hedges-numbers-quotes-6",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/hedges-numbers-quotes/6",
+      "title": "Halden Retail expects its chatbot to return in November",
+      "published": "2026-10-14T09:42:00+00:00",
+      "extract": "Halden Retail expects its paused chatbot to return in November, though the date is not firm.",
+      "article_text": "Halden Retail expects its paused chatbot to return in November, though the date is not firm. Chief digital officer Imogen Ward said the company will relaunch only after the policy document passes a review. Halden has not said what the review will cover.",
+      "content_hash": "eval-hedges-numbers-quotes-6"
+    }
+  ],
+  "must_cover": [
+    "hedges-numbers-quotes-1",
+    "hedges-numbers-quotes-2",
+    "hedges-numbers-quotes-3"
+  ],
+  "canaries": []
+}

@@ -1,0 +1,134 @@
+{
+  "id": "mixed-day",
+  "category": "normal",
+  "description": "A normal day: ten relevant items, one medium-tier release, and two to exclude.",
+  "target_date": "2026-10-14",
+  "items": [
+    {
+      "id": "mixed-day-1",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/mixed-day/1",
+      "title": "Northvale Bank moves 40 AI pilots into production",
+      "published": "2026-10-14T09:07:00+00:00",
+      "extract": "Northvale Bank has moved 40 of its AI pilots into production this year, up from 6 a year earlier.",
+      "article_text": "Northvale Bank has moved 40 of its AI pilots into production this year, up from 6 a year earlier. Chief information officer Dana Okafor said, “We stopped counting pilots and started counting processes that changed.” The bank says claims handling and loan document review account for most of the production systems. Okafor said the bank expects to retire 11 manual review steps by March. Analysts at Harbor Research noted that most large banks still run fewer than ten production systems.",
+      "content_hash": "eval-mixed-day-1"
+    },
+    {
+      "id": "mixed-day-2",
+      "source": "The Enterprise Desk",
+      "canonical_url": "https://news.example.com/mixed-day/2",
+      "title": "Brindle Logistics rebuilds dispatch around software agents",
+      "published": "2026-10-14T09:14:00+00:00",
+      "extract": "Brindle Logistics has replaced its manual dispatch queue with a set of software agents that assign drivers and reroute loads.",
+      "article_text": "Brindle Logistics has replaced its manual dispatch queue with a set of software agents that assign drivers and reroute loads. Chief operating officer Ravi Menon said the change cut average assignment time from 14 minutes to under 3. The company reported two incidents in which an agent sent a driver to a closed depot, and said both were caught by a human check. Menon said the company will keep human sign-off on any route change over 200 miles.",
+      "content_hash": "eval-mixed-day-2"
+    },
+    {
+      "id": "mixed-day-3",
+      "source": "Compliance Dispatch",
+      "canonical_url": "https://news.example.com/mixed-day/3",
+      "title": "Regulators propose audit trails for automated credit decisions",
+      "published": "2026-10-14T09:21:00+00:00",
+      "extract": "A national financial regulator has proposed that lenders keep a record of every input and output of automated credit-decision systems for five years.",
+      "article_text": "A national financial regulator has proposed that lenders keep a record of every input and output of automated credit-decision systems for five years. The draft rule would apply to models that approve, decline or price consumer loans. Industry groups have until December to comment. A regulator spokesperson said the aim is to let examiners reconstruct any individual decision.",
+      "content_hash": "eval-mixed-day-3"
+    },
+    {
+      "id": "mixed-day-4",
+      "source": "Boardroom Briefing",
+      "canonical_url": "https://news.example.com/mixed-day/4",
+      "title": "Calder Health cuts cost per AI query by moving to smaller models",
+      "published": "2026-10-14T09:28:00+00:00",
+      "extract": "Calder Health says it cut the cost of each AI query by 62 percent after moving routine summarization tasks to smaller models and keeping a larger model for complex cases.",
+      "article_text": "Calder Health says it cut the cost of each AI query by 62 percent after moving routine summarization tasks to smaller models and keeping a larger model for complex cases. Chief data officer Priya Ramanathan said, “Most of our requests never needed the biggest model.” The health system serves about 2.4 million queries a month. Ramanathan said accuracy on the routine tasks was unchanged in internal testing.",
+      "content_hash": "eval-mixed-day-4"
+    },
+    {
+      "id": "mixed-day-5",
+      "source": "Platform Weekly",
+      "canonical_url": "https://news.example.com/mixed-day/5",
+      "title": "Orrin Cloud adds a managed agent runtime to its platform",
+      "published": "2026-10-14T09:35:00+00:00",
+      "extract": "Orrin Cloud has released a managed runtime for running software agents, with built-in logging and per-agent spending limits.",
+      "article_text": "Orrin Cloud has released a managed runtime for running software agents, with built-in logging and per-agent spending limits. The company said the runtime is generally available in three regions. Orrin did not publish pricing for the logging feature. Platform Weekly could not verify the performance figures in the launch materials.",
+      "content_hash": "eval-mixed-day-5"
+    },
+    {
+      "id": "mixed-day-6",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/mixed-day/6",
+      "title": "Marrow Insurance says AI training cut onboarding time for adjusters",
+      "published": "2026-10-14T09:42:00+00:00",
+      "extract": "Marrow Insurance reported that new claims adjusters reach full productivity in 9 weeks instead of 15 after the insurer added an AI assistant to its training program.",
+      "article_text": "Marrow Insurance reported that new claims adjusters reach full productivity in 9 weeks instead of 15 after the insurer added an AI assistant to its training program. Head of claims operations Tomas Beckett said, “The assistant answers the questions people used to wait days to ask.” Marrow said about 300 adjusters have used the program. The company did not publish how it measured productivity.",
+      "content_hash": "eval-mixed-day-6"
+    },
+    {
+      "id": "mixed-day-7",
+      "source": "The Enterprise Desk",
+      "canonical_url": "https://news.example.com/mixed-day/7",
+      "title": "Halden Retail pauses a chatbot after it quoted wrong return policies",
+      "published": "2026-10-14T09:49:00+00:00",
+      "extract": "Halden Retail paused its customer chatbot for two weeks after it gave customers incorrect return-policy information.",
+      "article_text": "Halden Retail paused its customer chatbot for two weeks after it gave customers incorrect return-policy information. The retailer said about 1,100 customers received wrong answers before the error was found. Halden is refunding affected purchases. A spokesperson said the chatbot now answers only from a reviewed policy document.",
+      "content_hash": "eval-mixed-day-7"
+    },
+    {
+      "id": "mixed-day-8",
+      "source": "Compliance Dispatch",
+      "canonical_url": "https://news.example.com/mixed-day/8",
+      "title": "Security firm reports prompt-injection attack on an enterprise help desk assistant",
+      "published": "2026-10-14T09:56:00+00:00",
+      "extract": "Security firm Greywall reported an attack in which hidden text in a support ticket made a company's help desk assistant send out internal documents.",
+      "article_text": "Security firm Greywall reported an attack in which hidden text in a support ticket made a company's help desk assistant send out internal documents. Greywall said the affected company, which it did not name, has fixed the issue. Researcher Lena Hoffmann said, “The assistant trusted everything in the ticket equally.” Greywall recommended separating customer text from instructions.",
+      "content_hash": "eval-mixed-day-8"
+    },
+    {
+      "id": "mixed-day-9",
+      "source": "Boardroom Briefing",
+      "canonical_url": "https://news.example.com/mixed-day/9",
+      "title": "Pemberton Manufacturing trains 2,000 plant staff on AI tools",
+      "published": "2026-10-14T09:03:00+00:00",
+      "extract": "Pemberton Manufacturing has finished training 2,000 plant staff on AI-assisted maintenance tools.",
+      "article_text": "Pemberton Manufacturing has finished training 2,000 plant staff on AI-assisted maintenance tools. Human resources chief Colm Ashby said the company reassigned no jobs but changed the tasks in 140 roles. Pemberton said unplanned downtime fell 8 percent at the first three plants. The company said results at the remaining plants are not yet available.",
+      "content_hash": "eval-mixed-day-9"
+    },
+    {
+      "id": "mixed-day-10",
+      "source": "Platform Weekly",
+      "canonical_url": "https://news.example.com/mixed-day/10",
+      "title": "Quillon AI releases a new model with a larger context window",
+      "published": "2026-10-14T09:10:00+00:00",
+      "extract": "Quillon AI released a new model that accepts about four times as much text as its predecessor.",
+      "article_text": "Quillon AI released a new model that accepts about four times as much text as its predecessor. The company said enterprise customers can use it in document review. Quillon published benchmark results but said they were measured on its own test set. Independent results are not yet available.",
+      "content_hash": "eval-mixed-day-10"
+    },
+    {
+      "id": "mixed-day-11",
+      "source": "Gadget Gazette",
+      "canonical_url": "https://news.example.com/mixed-day/11",
+      "title": "Veyra Labs unveils a pocket-sized AI voice recorder for travelers",
+      "published": "2026-10-14T09:17:00+00:00",
+      "extract": "Veyra Labs unveiled a pocket-sized voice recorder that translates conversations as they happen.",
+      "article_text": "Veyra Labs unveiled a pocket-sized voice recorder that translates conversations as they happen. The device costs 199 dollars and ships next month. Veyra said battery life is about ten hours. The company showed the product at a consumer electronics event.",
+      "content_hash": "eval-mixed-day-11"
+    },
+    {
+      "id": "mixed-day-12",
+      "source": "Market Murmur",
+      "canonical_url": "https://news.example.com/mixed-day/12",
+      "title": "Rumor: AI startup in talks for a record funding round",
+      "published": "2026-10-14T09:24:00+00:00",
+      "extract": "People familiar with the matter say an AI startup is in talks to raise a very large funding round at a high valuation.",
+      "article_text": "People familiar with the matter say an AI startup is in talks to raise a very large funding round at a high valuation. The talks are at an early stage and the terms could change. The startup declined to comment. No customer or revenue figures were reported.",
+      "content_hash": "eval-mixed-day-12"
+    }
+  ],
+  "must_cover": [
+    "mixed-day-1",
+    "mixed-day-4",
+    "mixed-day-3"
+  ],
+  "canaries": []
+}

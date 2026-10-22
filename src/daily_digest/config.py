@@ -74,6 +74,16 @@ class LLMSettings(BaseModel):
         return self
 
 
+class EvalSettings(BaseModel):
+    """The eval suite's judge and spending limits."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    judge_model: str = Field(min_length=1)
+    max_usd_per_eval: Decimal = Field(gt=0)  # generator and judge calls together
+    max_usd_per_judge: Decimal = Field(gt=0)  # one judged case
+
+
 class SettingsError(Exception):
     """The settings file is missing or has a bad value; the message names the key."""
 
@@ -82,6 +92,7 @@ class _SettingsFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     llm: LLMSettings
+    eval: EvalSettings | None = None
 
 
 def load_llm_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LLMSettings:
@@ -98,3 +109,21 @@ def load_llm_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LLMSettings:
         first = error.errors()[0]
         key = ".".join(str(part) for part in first["loc"]) or "llm"
         raise SettingsError(f"invalid setting {key}: {first['msg']}") from None
+
+
+def load_eval_settings(path: Path = DEFAULT_SETTINGS_PATH) -> EvalSettings:
+    """The `[eval]` table. The judge model needs a price entry like any other model."""
+    load_llm_settings(path)  # reports a missing or invalid file the same way for every command
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    try:
+        parsed = _SettingsFile.model_validate(data)
+    except ValidationError as error:
+        first = error.errors()[0]
+        key = ".".join(str(part) for part in first["loc"]) or "eval"
+        raise SettingsError(f"invalid setting {key}: {first['msg']}") from None
+    if parsed.eval is None:
+        raise SettingsError("invalid setting eval: the [eval] table is missing")
+    if parsed.eval.judge_model not in parsed.llm.prices:
+        raise SettingsError(f"invalid setting eval.judge_model: no entry for model {parsed.eval.judge_model!r} in llm.prices")
+    return parsed.eval
