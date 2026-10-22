@@ -56,11 +56,12 @@ def _ingest_reports(db_path: Path, feeds_path: Path) -> list[FeedReport]:
     _warn_if_no_contact()
     sources = load_sources(feeds_path)
     with HttpFetcher() as fetcher, Store(db_path) as store:
-        robots = RobotsChecker(fetcher.fetch, user_agent())
+        robots = RobotsChecker(fetcher.fetch, user_agent(), confine_redirects=True)
         reports = ingest(sources, fetcher.fetch, robots, store)
         print(f"{'source':34} {'entries':>7} {'stored':>6} {'dupes':>5} {'skipped':>7} {'off-list':>8}  error")
         for r in reports:
-            print(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7} {r.blocked:8}  {r.error or ''}")
+            counts = f"{r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7} {r.blocked:8}"
+            print(f"{r.source:34} {counts}  {r.error or ''}")
         print(f"\nItems in database: {store.count()}  ({db_path})")
     return reports
 
@@ -98,7 +99,7 @@ def run_extract(
 ) -> int:
     _warn_if_no_contact()
     try:
-        sources = load_sources(feeds_path)
+        sources = load_sources(feeds_path, include_disabled=True)  # stored items of a disabled feed stay fetchable
     except SettingsError as error:
         print(_printable(f"error: {error}"), file=sys.stderr)
         return 2
@@ -107,7 +108,7 @@ def run_extract(
         return 2
     since = extract_since(date.today(), days)
     with store, HttpFetcher() as fetcher:
-        robots = RobotsChecker(fetcher.fetch, user_agent())
+        robots = RobotsChecker(fetcher.fetch, user_agent(), confine_redirects=True)
         report = extract_articles(
             store, fetcher.fetch, robots, sources=sources, set_host_delay=fetcher.set_host_delay, limit=limit,
             since=since,
@@ -245,7 +246,7 @@ def _generate(
     db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool, feeds_path: Path
 ) -> int:
     try:
-        allowed = allowed_by_source(load_sources(feeds_path))  # read before any model call is paid for
+        allowed = allowed_by_source(load_sources(feeds_path, include_disabled=True))  # before any model call
     except SettingsError as error:
         print(_printable(f"error: {error}"), file=sys.stderr)
         return 2
@@ -253,7 +254,7 @@ def _generate(
     if store is None:
         return 2
     with store:
-        state = run_digest(store, target, client, review_enabled=review_enabled)
+        state = run_digest(store, target, client, review_enabled=review_enabled, allowed=allowed)
         digest, review = state.digest, state.review
         if digest is None:  # a quiet day, or a draft that could not be repaired
             _print_review(state)
@@ -449,7 +450,7 @@ def main() -> None:
     p.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML)")
     e = sub.add_parser("extract", help="fetch full article text for items whose feed text is too short")
     e.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
-    e.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML); it names each feed's allowed domains")
+    e.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML), with each feed's allowed domains")
     e.add_argument("--limit", type=int, default=None, help="maximum number of articles to fetch")
     e.add_argument(
         "--days", type=_positive_int, default=DEFAULT_EXTRACT_DAYS,
@@ -469,7 +470,7 @@ def main() -> None:
     )
     g = sub.add_parser("generate", help="make yesterday's digest for real: review it, save it, mark its items seen")
     g.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
-    g.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML); it names each feed's allowed domains")
+    g.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML), with each feed's allowed domains")
     g.add_argument("--out-dir", type=Path, default=None, help="where digests go (default: newsletters/ in the project)")
     g.add_argument(
         "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",

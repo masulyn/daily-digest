@@ -49,7 +49,7 @@ def env(tmp_path):
 def feeds_for_the_fixture_items(monkeypatch):
     """`generate` reads the feed list to check each Sources link; these items come from invented feeds."""
     names = ("Example Finance", "Example Review", "Example Wire", "Hostile Blog")
-    monkeypatch.setattr(cli, "load_sources", lambda path: [
+    monkeypatch.setattr(cli, "load_sources", lambda path, include_disabled=False: [
         Source(name=n, url="https://news.example.com/feed", category="t", allowed_domains=["example.com"]) for n in names
     ])
 
@@ -713,7 +713,7 @@ class FakeFetcher:
     def set_host_delay(self, host, seconds):
         pass
 
-    def fetch(self, url):
+    def fetch(self, url, **kwargs):
         if url.endswith("/robots.txt"):
             return 404, b""
         if any(name in url for name in self.down):

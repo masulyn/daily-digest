@@ -111,7 +111,8 @@ def ingest(sources: list[Source], fetch: FetchFn, robots: RobotsChecker, store: 
                     report.skipped += 1
                 elif not host_allowed(parsed[0].canonical_url, allowed):
                     report.blocked += 1
-                    log.warning("%s feed=%s host=%s", ErrorCode.DOMAIN_NOT_ALLOWED, safe_text(source.name), safe_host(parsed[0].canonical_url))
+                    host = safe_host(parsed[0].canonical_url)
+                    log.warning("%s feed=%s host=%s", ErrorCode.DOMAIN_NOT_ALLOWED, safe_text(source.name), host)
                 elif store.add_if_new(parsed[0], needs_extraction=parsed[1]):
                     report.stored += 1
                 else:

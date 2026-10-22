@@ -6,6 +6,7 @@ outside the state (the local store); the editor reaches a model only through the
 
 import operator
 import re
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated
 
@@ -14,6 +15,7 @@ from pydantic import AwareDatetime, BaseModel
 
 from .contracts import CandidateItem, Draft, FinalDigest, ItemSummary, ReviewSummary
 from .digest import build_digest
+from .domains import item_link_allowed
 from .editor import MIN_ITEMS, fit_items, hidden_text_note, write_draft
 from .llm import BudgetedClient
 from .reviewer import run_review
@@ -41,13 +43,21 @@ def day_window(target: date) -> tuple[datetime, datetime]:
     return start, end
 
 
-def load_items(state: DigestState, store: Store) -> dict:
-    """Read the day's unseen items from the store."""
+def load_items(state: DigestState, store: Store, allowed: Mapping[str, Iterable[str]] | None = None) -> dict:
+    """Read the day's unseen items from the store.
+
+    With `allowed` (feed name to domains), an item whose feed is unknown or whose link is off its feed's
+    list is dropped before any model sees it. `None` is for callers whose items are not from the feed list.
+    """
     start, end = day_window(state.target_date)
     items = store.items_published_between(start, end)
-    update: dict = {"window_start": start, "window_end": end, "items": items}
+    kept = items if allowed is None else [i for i in items if item_link_allowed(i, allowed)]
+    update: dict = {"window_start": start, "window_end": end, "items": kept}
+    if len(kept) < len(items):
+        update["notes"] = [f"dropped {len(items) - len(kept)} items whose feed or link is not on the allowed list"]
+    items = kept
     if not items:
-        update["notes"] = [f"quiet day: no new items for {state.target_date}"]
+        update["notes"] = [*update.get("notes", []), f"quiet day: no new items for {state.target_date}"]
     return update
 
 
@@ -95,14 +105,17 @@ def review(state: DigestState, client: BudgetedClient, enabled: bool) -> dict:
     return {"draft": outcome.draft, "digest": digest, "review": outcome.summary, "notes": outcome.notes}
 
 
-def build_graph(store: Store, client: BudgetedClient | None = None, *, review_enabled: bool = False):
+def build_graph(
+    store: Store, client: BudgetedClient | None = None, *, review_enabled: bool = False,
+    allowed: Mapping[str, Iterable[str]] | None = None,
+):
     """load_items -> editor_writer -> review -> end, or load_items -> summarize_stub -> end without a client.
 
     The client carries its own budget (`MeteredClient`), so the graph holds no cost logic. With
     `review_enabled=False` the digest comes out marked unreviewed.
     """
     graph = StateGraph(DigestState)
-    graph.add_node("load_items", lambda state: load_items(state, store))
+    graph.add_node("load_items", lambda state: load_items(state, store, allowed))
     graph.add_edge(START, "load_items")
     if client is None:
         graph.add_node("summarize_stub", summarize_stub)
@@ -118,12 +131,13 @@ def build_graph(store: Store, client: BudgetedClient | None = None, *, review_en
 
 
 def run_digest(
-    store: Store, target: date, client: BudgetedClient | None = None, *, review_enabled: bool = False
+    store: Store, target: date, client: BudgetedClient | None = None, *, review_enabled: bool = False,
+    allowed: Mapping[str, Iterable[str]] | None = None,
 ) -> DigestState:
     """Run the graph for one day. LangGraph returns a dict, so validate it into the state model.
 
     LangGraph does not validate the last node's output, so this is the only check of it.
     """
     state = DigestState(target_date=target, generated_at=datetime.now(timezone.utc))
-    result = build_graph(store, client, review_enabled=review_enabled).invoke(state)
+    result = build_graph(store, client, review_enabled=review_enabled, allowed=allowed).invoke(state)
     return DigestState.model_validate(result)

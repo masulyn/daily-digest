@@ -20,8 +20,12 @@ class _FeedsFile(BaseModel):
     feeds: list[Source]
 
 
-def load_sources(path: Path = DEFAULT_FEEDS_PATH) -> list[Source]:
-    """Return enabled sources. A bad entry raises SettingsError naming the feed and the key."""
+def load_sources(path: Path = DEFAULT_FEEDS_PATH, *, include_disabled: bool = False) -> list[Source]:
+    """Return the enabled sources (all of them with `include_disabled`).
+
+    A bad entry raises SettingsError naming the feed and the key. Items already stored from a disabled
+    feed keep their allowed domains, so the stages that read stored items ask for every feed.
+    """
     with open(path, "rb") as f:
         data = tomllib.load(f)
     try:
@@ -30,11 +34,16 @@ def load_sources(path: Path = DEFAULT_FEEDS_PATH) -> list[Source]:
         first = error.errors(include_input=False)[0]
         loc = first["loc"]
         rows = data.get("feeds")
-        feed = rows[loc[1]].get("name") if loc[:1] == ("feeds",) and len(loc) > 1 and isinstance(rows, list) else None
+        row = rows[loc[1]] if loc[:1] == ("feeds",) and len(loc) > 1 and isinstance(rows, list) else None
+        feed = row.get("name") if isinstance(row, dict) else None
         key = ".".join(str(part) for part in loc[2:]) if feed is not None else ".".join(str(part) for part in loc)
         who = f"feed {str(feed)!r}: " if feed is not None else ""
-        raise SettingsError(f"invalid feeds file {path.name}: {who}{key or 'feeds'}: {first['msg'].removeprefix('Value error, ')}") from None
-    return [s for s in parsed.feeds if s.enabled]
+        reason = first["msg"].removeprefix("Value error, ")
+        raise SettingsError(f"invalid feeds file {path.name}: {who}{key or 'feeds'}: {reason}") from None
+    names = [s.name for s in parsed.feeds]
+    if duplicate := next((n for n in names if names.count(n) > 1), None):
+        raise SettingsError(f"invalid feeds file {path.name}: feed {duplicate!r}: the name is used by more than one feed")
+    return [s for s in parsed.feeds if include_disabled or s.enabled]
 
 
 def data_dir() -> Path:

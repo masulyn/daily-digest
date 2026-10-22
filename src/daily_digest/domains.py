@@ -17,6 +17,7 @@ if TYPE_CHECKING:  # contracts imports this module for its validators
 MAX_SAFE_HOST_CHARS = 80
 _PORTS = (None, 80, 443)
 _LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
+_HOST_LABEL = re.compile(r"^[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?$")  # real hosts: underscores occur, nothing else odd
 # Two-label public suffixes, so "news.bbc.co.uk" gives "bbc.co.uk" and not "co.uk". There is no public
 # suffix list here (no new dependency); a feed on a suffix not listed should name its domains in
 # `allowed_domains`, which always wins.
@@ -40,21 +41,30 @@ def parse_host(url: str) -> str | None:
     if parts.scheme not in ("http", "https") or "@" in parts.netloc or port not in _PORTS:
         return None
     host = (parts.hostname or "").rstrip(".")
-    if not host or any(c.isspace() or not c.isprintable() for c in host):
+    if not host:
         return None
     try:
-        return host.encode("idna").decode("ascii").lower()
+        ascii_host = host.encode("idna").decode("ascii").lower()
     except UnicodeError:
         return None
+    if _is_ip(ascii_host):
+        return ascii_host
+    # The codec lets ASCII through unchecked, so "evil.com\\.cio.com" would otherwise end in ".cio.com".
+    return ascii_host if all(_HOST_LABEL.match(label) for label in ascii_host.split(".")) else None
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 
 def registrable_domain(host: str) -> str:
     """The host's registrable domain: its last two labels, or three under a known two-label suffix."""
-    try:
-        ipaddress.ip_address(host)
+    if _is_ip(host):
         return host
-    except ValueError:
-        pass
     labels = host.split(".")
     if len(labels) <= 2:
         return host
@@ -76,11 +86,9 @@ def normalize_domain(entry: str) -> str:
     labels = ascii_text.split(".")
     if len(labels) < 2 or not all(_LABEL.match(label) for label in labels):
         raise ValueError("must be a domain with at least two labels, such as example.com")
-    try:
-        ipaddress.ip_address(ascii_text)
-    except ValueError:
-        return ascii_text
-    raise ValueError("an IP address is not a domain")
+    if _is_ip(ascii_text):
+        raise ValueError("an IP address is not a domain")
+    return ascii_text
 
 
 def allowed_domains_for(source: "Source") -> tuple[str, ...]:

@@ -58,6 +58,13 @@ def test_the_domain_and_its_subdomains_match_in_any_case(url):
     "https://%63io.com.evil.com/a",
     "https://1.2.3.4/a",
     "https://[::1]/a",
+    "https://evil.com\\.cio.com/a",      # a backslash is a slash to a browser, so the host is evil.com
+    "https://evil.com;.cio.com/a",
+    "https://evil.com!.cio.com/a",
+    "https://evil.com%2f.cio.com/a",
+    "https://evil.com .cio.com/a",
+    "https://-evil.cio.com/a",
+    "https://a..cio.com/a",
 ])
 def test_lookalike_hosts_userinfo_ports_and_other_schemes_do_not_match(url):
     assert not host_allowed(url, CIO)
@@ -68,6 +75,10 @@ def test_internationalised_hosts_are_compared_in_their_ascii_form():
     assert host_allowed("https://www.bücher.example/a", ["xn--bcher-kva.example"])
     assert host_allowed("https://bücher.example/a", [normalize_domain("BÜCHER.example")])
     assert not host_allowed("https://xn--bcher-kva.example.evil.com/a", ["xn--bcher-kva.example"])
+
+
+def test_ordinary_hosts_with_underscores_digits_and_hyphens_still_match():
+    assert host_allowed("https://my_feed-2.cio.com/a", CIO) and host_allowed("https://1.cio.com/a", CIO)
 
 
 def test_an_unparseable_url_is_not_allowed_and_not_a_crash():
@@ -136,6 +147,27 @@ def test_a_malformed_allowed_domains_value_fails_startup_naming_the_feed_and_the
     path.write_text(path.read_text().replace('["good.example.com", "https://bad.example.com/path"]', '"not-a-list"'))
     with pytest.raises(SettingsError, match="Broken Feed.*allowed_domains"):
         load_sources(path)
+
+
+def test_a_feeds_file_with_a_row_that_is_not_a_table_fails_with_a_clear_message(tmp_path):
+    path = tmp_path / "feeds.toml"
+    path.write_text('feeds = ["not a table"]\n')
+    with pytest.raises(SettingsError, match="invalid feeds file feeds.toml"):
+        load_sources(path)
+
+
+def test_two_feeds_with_the_same_name_are_rejected_because_items_are_matched_to_their_feed_by_name(tmp_path):
+    path = tmp_path / "feeds.toml"
+    block = '[[feeds]]\nname = "Same"\nurl = "https://{}.example.com/feed"\ncategory = "c"\n'
+    path.write_text(block.format("a") + block.format("b"))
+    with pytest.raises(SettingsError, match="'Same': the name is used by more than one feed"):
+        load_sources(path)
+
+
+def test_a_disabled_feed_is_loaded_on_request_so_its_stored_items_keep_their_domains(tmp_path):
+    path = tmp_path / "feeds.toml"
+    path.write_text('[[feeds]]\nname = "Off"\nurl = "https://a.example.com/feed"\ncategory = "c"\nenabled = false\n')
+    assert load_sources(path) == [] and [s.name for s in load_sources(path, include_disabled=True)] == ["Off"]
 
 
 # --- ingest ----------------------------------------------------------------------------
@@ -249,9 +281,42 @@ def test_a_redirect_to_another_host_on_the_list_is_followed():
     assert report.extracted == 1
 
 
-def test_an_item_whose_feed_left_the_list_is_not_fetched_and_can_be_retried_later():
+def test_an_item_whose_feed_left_the_list_is_not_fetched_and_no_attempt_is_used_up():
     store = store_with_link("https://www.cio.com/article", source="Removed feed")
     fetch = guarded_fetch(lambda url: (200, PAGE))
-    report = extract_articles(store, fetch, allow_all(), sources=[FEED])
-    assert report.failures == {str(ErrorCode.DOMAIN_NOT_ALLOWED): 1} and fetch.calls == []
-    assert len(store.pending_extraction()) == 1  # attempts are bounded, but a restored feed makes it fetchable
+    for _ in range(5):  # more runs than there are attempts
+        report = extract_articles(store, fetch, allow_all(), sources=[FEED])
+        assert report.failures == {str(ErrorCode.DOMAIN_NOT_ALLOWED): 1}
+    assert fetch.calls == [] and len(store.pending_extraction()) == 1
+    assert extract_articles(store, fetch, allow_all(), sources=[FEED.model_copy(update={"name": "Removed feed"})]).extracted == 1
+
+
+def test_a_robots_txt_that_redirects_off_the_list_is_not_followed_and_its_host_is_never_looked_up():
+    store = store_with_link("https://www.cio.com/article")
+    contacted, lookups = [], []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        contacted.append((request.headers["Host"], request.url.path))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(302, headers={"Location": "https://evil.example.org/robots.txt"})
+        return httpx.Response(200, content=PAGE)
+
+    with HttpFetcher(transport=httpx.MockTransport(handler), resolver=lambda h, p: lookups.append(h) or ["8.8.8.8"], min_interval=0.0) as fetcher:
+        robots = RobotsChecker(fetcher.fetch, "test", confine_redirects=True)
+        report = extract_articles(store, fetcher.fetch, robots, sources=[FEED])
+    assert report.extracted == 0 and all(host == "www.cio.com" for host, _ in contacted) and set(lookups) == {"www.cio.com"}
+
+
+def test_a_robots_txt_may_still_redirect_within_its_own_domain():
+    store = store_with_link("https://www.cio.com/article")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt" and request.headers["Host"] == "www.cio.com":
+            return httpx.Response(301, headers={"Location": "https://cio.com/robots.txt"})
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(200, content=PAGE)
+
+    with HttpFetcher(transport=httpx.MockTransport(handler), resolver=lambda h, p: ["8.8.8.8"], min_interval=0.0) as fetcher:
+        robots = RobotsChecker(fetcher.fetch, "test", confine_redirects=True)
+        assert extract_articles(store, fetcher.fetch, robots, sources=[FEED]).extracted == 1

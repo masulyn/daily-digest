@@ -14,10 +14,10 @@ Daily Digest reads text written by strangers (feeds and article pages), shows it
 
 1. **Fetch.** One fetcher makes every request. Every URL, and every redirect hop, must be `https` and resolve to public addresses only; the connection goes to the address that was checked (so DNS cannot change its answer). Responses are size-capped, redirects are limited, and one fetch has a total time limit.
 2. **Ingest.** Feeds are parsed, HTML is stripped to plain text, text is cut to 1,200 characters, and each item's link must point to a domain its feed is allowed to link to. Items that do not are dropped and counted.
-3. **Extract.** Article text is fetched only from the feed's allowed domains (each redirect hop included), after `robots.txt` and the site's crawl delay. Only plain text, capped in length, is kept.
+3. **Extract.** Article text is fetched only from the feed's allowed domains (each redirect hop included), after `robots.txt` and the site's crawl delay. A `robots.txt` may redirect only within its own registrable domain. Only plain text, capped in length, is kept.
 4. **Rendering for a model.** All item text, titles and source names pass through one function (`render_items`): look-alike characters are folded (NFKC), invisible and reordering characters are removed, angle brackets are neutralised, and each item sits between `<<<ITEM` and `<<<END ITEM` lines. The system prompts say that everything between those lines is data. The Writer, the revision, the Reviewer and the eval judge all use this function.
 5. **Model output.** Every reply must match a schema. Code then checks it against the text that was sent, and builds citation markers and the Sources list itself.
-6. **Publish.** The Publisher checks the finished digest again and writes it. Sources come only from stored items.
+6. **Publish.** `generate` drops stored items whose feed is unknown or whose link is off its feed's list before any model call, then the Publisher checks the finished digest again and writes it. Sources come only from stored items. (`draft` shows what is stored and does not apply the list.)
 
 ## The defences, and where they live
 
@@ -42,6 +42,7 @@ Daily Digest reads text written by strangers (feeds and article pages), shows it
 
 - **A planted claim.** An injected item can state a false claim in ordinary prose. If the Writer reports it with attribution ("Hostile Blog says ..."), that sentence is supported by the text it cites, so no code check can reject it. What reduces this: the exclude tier and the promotional-framing rule in the prompts, the Reviewer's entailment check, the source and attribution shown in the digest, and a person reading the digest before relying on it. Tests cover an obedient model, but they cannot remove this risk.
 - **The model can still be steered.** Delimiters and rules make injection harder, not impossible. The defences above are what limit the damage: a steered model can write text, but it cannot add a link, a quote or a source that is not in the stored items, cannot approve its own draft, and cannot call tools.
+- **Feed URLs are chosen by you, and their redirects are not confined.** A feed that redirects to another host is followed (many legitimate feeds do), subject to the address, robots and size checks. Only the links inside a feed and article fetches are held to the allowlist.
 - **Stored text is as fetched.** Hidden characters are removed when text is shown to a model, not when it is stored, so the database can hold them.
 - **The allowlist trusts a domain, not a page.** A feed's own domain can still host a hostile article. The default is the feed's registrable domain, which is wide for a shared one such as a university's; a feed can list narrower domains. The registrable domain is found with a short built-in list of two-part suffixes, not the full public suffix list, so a feed on an unusual suffix should list its domains explicitly.
 - **The key is in the process environment.** Anything running as you can read it. Use a dedicated key with a spend limit (see the README).

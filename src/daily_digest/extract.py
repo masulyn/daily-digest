@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from urllib.parse import urlsplit
 
 from .contracts import ErrorCode, Source
@@ -133,11 +134,11 @@ def extract_articles(
     for item_id, url in store.pending_extraction(limit, since):
         report.considered += 1
         feed = store.source_of(item_id)
-        if feed not in allowed:  # the feed was removed from the list; a restored entry makes it fetchable again
-            _record_failure(store, report, item_id, ErrorCode.DOMAIN_NOT_ALLOWED, final=False)
+        if feed not in allowed:  # not recorded as an attempt, so adding the feed back makes the item fetchable again
+            report.failures[str(ErrorCode.DOMAIN_NOT_ALLOWED)] = report.failures.get(str(ErrorCode.DOMAIN_NOT_ALLOWED), 0) + 1
             continue
         try:
-            status, body = fetch(url, allow=allow, permit=lambda hop, domains=allowed[feed]: host_allowed(hop, domains))
+            status, body = fetch(url, allow=allow, permit=partial(host_allowed, allowed=allowed[feed]))
         except BackoffError:
             report.deferred += 1
             continue
