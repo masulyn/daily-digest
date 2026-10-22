@@ -469,3 +469,10 @@ def test_a_reviewer_error_that_is_not_about_budget_leaves_the_first_draft_unrevi
     outcome, client = run([PermanentLLMError("the model API returned HTTP 401")])
     assert outcome.summary.status == "unreviewed" and outcome.draft is not None
     assert outcome.notes == ["the reviewer could not run: the model API returned HTTP 401"]
+
+
+def test_each_model_review_is_recorded_with_the_draft_it_judged_and_every_issue_found():
+    outcome, _ = run([blocked(), reworded(), blocked(), reworded(), blocked()])
+    assert [r.number for r in outcome.rounds] == [1, 2, 3] and all(r.issues for r in outcome.rounds)
+    assert outcome.rounds[0].draft.headline == make_draft(300).headline
+    assert run([approve()])[0].rounds[0].issues == []

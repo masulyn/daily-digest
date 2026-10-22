@@ -116,6 +116,7 @@ class CaseResult(BaseModel):
     judge: JudgeResult | None = None
     judge_error: str | None = None
     error: str | None = None
+    failure: str | None = None  # why the case did not pass, as the draft command prints it
     canary_hits: list[str] = Field(default_factory=list)
     words: int | None = None
 

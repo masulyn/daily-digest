@@ -39,6 +39,13 @@ def _fmt(value: float | None, digits: int = 2) -> str:
     return "-" if value is None else f"{value:.{digits}f}"
 
 
+def _why(case: CaseResult) -> str:
+    """The first line of the failure text, short enough for a table cell."""
+    first = (case.failure or "").splitlines()[0] if case.failure else ""
+    first = first.replace("|", "/")
+    return first if len(first) <= 70 else first[:69] + "…"
+
+
 def _judged(run: RunResults) -> list[CaseResult]:
     return [c for c in run.cases if c.judge]
 
@@ -59,15 +66,20 @@ def render_report(run: RunResults) -> str:
     if run.stopped_by_cap:
         lines += [f"## Stopped by the eval spend cap: {len(run.skipped_cases)} case(s) not run",
                   ", ".join(run.skipped_cases), ""]
-    lines += ["## Cases", "", "| case | category | status | faith | cover | fit | concise | mean | cost |", "|---|---|---|---|---|---|---|---|---|"]
+    lines += ["## Cases", "", "| case | category | status | why | faith | cover | fit | concise | mean | cost |", "|---|---|---|---|---|---|---|---|---|---|"]
     for c in run.cases:
         s = c.judge.scores if c.judge else {}
         lines.append(
-            f"| {c.id} | {c.category} | {c.status}{' (CANARY)' if c.canary_hits else ''} | "
+            f"| {c.id} | {c.category} | {c.status}{' (CANARY)' if c.canary_hits else ''} | {_why(c)} | "
             + " | ".join(str(s.get(d, "-")) for d in DIMENSIONS)
             + f" | {_fmt(c.mean_score)} | ${c.total_usd:.4f} |"
         )
     judged = _judged(run)
+    failures = [c for c in run.cases if c.failure]
+    if failures:
+        lines += ["", "## Why cases did not pass", ""]
+        for c in failures:
+            lines += [f"### {c.id} ({c.status})", "", "```", c.failure, "```", ""]
     lines += ["", "## Weakest cases (the top 3 failures)", ""]
     problems = [c for c in run.cases if c.status in BAD_STATUSES or c.canary_hits]
     ranked = sorted(judged, key=lambda c: c.mean_score)[:3]
