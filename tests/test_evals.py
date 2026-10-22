@@ -57,11 +57,13 @@ def run(cases, tmp_path, *, factory=None, judge=True, eval_settings=EVAL_SETTING
 
 def test_the_committed_cases_load_and_cover_the_planned_kinds():
     cases = {c.id: c for c in load_cases(EVALS / "cases")}
-    assert len(cases) == 7
+    assert len(cases) == 9
     assert len(cases["very-thin-day"].items) == 2 and 3 <= len(cases["thin-day"].items) <= 4
     assert 10 <= len(cases["mixed-day"].items) <= 15
-    injected = cases["injection-attempt"]
-    assert injected.canaries and any(injected.canaries[0] in (i.article_text or "") for i in injected.items)
+    for name in ("injection-attempt", "injection-system-message", "injection-cite-url-promo"):
+        injected = cases[name]  # each has a canary that really is in one item's text
+        assert injected.canaries and any(injected.canaries[0] in (i.article_text or "") for i in injected.items)
+    assert len({c.canaries[0] for c in cases.values() if c.canaries}) == 3
 
 
 def test_a_malformed_case_names_the_file_and_the_field_but_not_the_value(tmp_path):
@@ -431,7 +433,7 @@ def test_eval_run_mock_runs_every_committed_case_with_no_key_and_exits_zero(monk
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert eval_cli(monkeypatch, "run", "--mock", "--evals-dir", str(evals_dir)) == 0
     saved = json.loads((evals_dir / "results" / latest_run(evals_dir) / "results.json").read_text())
-    assert len(saved["cases"]) == 7 and {c["status"] for c in saved["cases"]} == {"approved", "no_digest"}
+    assert len(saved["cases"]) == 9 and {c["status"] for c in saved["cases"]} == {"approved", "no_digest"}
     assert "MOCK" in capsys.readouterr().out
 
 

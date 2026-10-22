@@ -21,7 +21,8 @@ from .domains import safe_host
 
 MAX_REDIRECTS = 5
 MAX_BYTES = 2 * 1024 * 1024
-TIMEOUT_SECONDS = 15.0
+TIMEOUT_SECONDS = 15.0  # per read: a server that drips one byte at a time never trips it
+TOTAL_SECONDS = 60.0  # one fetch, redirects included, so a slow-drip response is cut off
 DNS_TIMEOUT_SECONDS = 5.0
 MIN_SECONDS_BETWEEN_REQUESTS = 1.0
 DEFAULT_RETRY_AFTER_SECONDS = 60
@@ -176,6 +177,7 @@ class HttpFetcher:
         `permit` judges the URL text alone and is asked first at every hop, before any DNS lookup or
         request, so a link to a host that is not allowed costs the host nothing, not even a lookup.
         """
+        deadline = time.monotonic() + TOTAL_SECONDS
         for _ in range(MAX_REDIRECTS + 1):
             if permit is not None and not permit(url):
                 raise FetchError(ErrorCode.DOMAIN_NOT_ALLOWED, safe_host(url))
@@ -199,6 +201,8 @@ class HttpFetcher:
                         self._note_retry_after(host, response)
                     body = bytearray()
                     for chunk in response.iter_bytes():
+                        if time.monotonic() > deadline:
+                            raise FetchError(ErrorCode.FEED_UNREACHABLE, "response too slow")
                         body.extend(chunk)
                         if len(body) > MAX_BYTES:
                             raise FetchError(ErrorCode.RESPONSE_TOO_LARGE, f"response over {MAX_BYTES} bytes")
