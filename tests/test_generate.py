@@ -10,7 +10,8 @@ import pytest
 
 from api_helpers import APPROVE, FAKE_KEY, blocked, script
 from daily_digest import cli
-from daily_digest.contracts import ErrorCode, CitedSource, PublishedDigest, ReviewSummary, UsageRecord
+from daily_digest.config import load_sources
+from daily_digest.contracts import ErrorCode, CitedSource, Source, PublishedDigest, ReviewSummary, UsageRecord
 from daily_digest.digest import build_digest, render_markdown
 from daily_digest.graph import DigestState
 from daily_digest.ingest import FeedReport
@@ -30,6 +31,7 @@ DAY = date(2026, 10, 14)
 IDS = ("a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8")
 NOW = datetime(2026, 10, 15, 8, 30, tzinfo=timezone.utc)
 APPROVED = ReviewSummary(status="approved", rounds=1)
+ALLOWED = {name: (("example.com",)) for name in ("Example Finance", "Example Review", "Example Wire", "Hostile Blog")}
 
 
 @pytest.fixture
@@ -41,6 +43,15 @@ def env(tmp_path):
             if item.article_text:
                 store.save_article_text(item.id, item.article_text)
     return db, tmp_path / "newsletters"
+
+
+@pytest.fixture(autouse=True)
+def feeds_for_the_fixture_items(monkeypatch):
+    """`generate` reads the feed list to check each Sources link; these items come from invented feeds."""
+    names = ("Example Finance", "Example Review", "Example Wire", "Hostile Blog")
+    monkeypatch.setattr(cli, "load_sources", lambda path, include_disabled=False: [
+        Source(name=n, url="https://news.example.com/feed", category="t", allowed_domains=["example.com"]) for n in names
+    ])
 
 
 def seen_rows(db: Path) -> int:
@@ -260,7 +271,7 @@ def test_the_built_artifact_is_validated_before_anything_is_written(monkeypatch,
     change, reason = BAD_DIGESTS[name]
     state = good_state()
     bad = change(state.digest)
-    assert any(reason in p for p in validate_digest(bad, state.items))
+    assert any(reason in p for p in validate_digest(bad, state.items, ALLOWED))
     monkeypatch.setattr(cli, "run_digest", lambda *a, **k: state.model_copy(update={"digest": bad}))
     script(monkeypatch, [])
     assert generate(monkeypatch, env) == 1
@@ -273,20 +284,20 @@ def test_the_built_artifact_is_validated_before_anything_is_written(monkeypatch,
 
 def test_a_good_digest_has_no_validation_problems():
     state = good_state()
-    assert validate_digest(state.digest, state.items) == []
+    assert validate_digest(state.digest, state.items, ALLOWED) == []
 
 
 def test_only_reviewed_statuses_may_be_saved():
     state = good_state()
     for status in ("unreviewed", "failed"):
         digest = state.digest.model_copy(update={"review": ReviewSummary(status=status)})
-        assert validate_digest(digest, state.items) == ["the digest has not been reviewed"]
+        assert validate_digest(digest, state.items, ALLOWED) == ["the digest has not been reviewed"]
 
 
 def test_the_publisher_does_not_recheck_word_count_or_headline_length():
     state = good_state()
     short = state.digest.model_copy(update={"headline": " ".join(["word"] * 40)})
-    assert validate_digest(short, state.items) == []  # the Reviewer's job, not the Publisher's
+    assert validate_digest(short, state.items, ALLOWED) == []  # the Reviewer's job, not the Publisher's
 
 
 # --- atomicity and races ---------------------------------------------------------------
@@ -480,14 +491,14 @@ def test_a_sources_link_must_be_http_or_https_even_if_the_feed_supplied_it():
              for i in state.items]
     digest = state.digest.model_copy(update={"sources": [
         state.digest.sources[0].model_copy(update={"url": "javascript:alert(1)"}), *state.digest.sources[1:]]})
-    problems = validate_digest(digest, items)
-    assert problems == ["a Sources URL is not an http or https link"]
+    problems = validate_digest(digest, items, ALLOWED)
+    assert "a Sources URL is not an http or https link" in problems
 
 
 def test_plain_brackets_and_stacked_markers_are_not_mistaken_for_links():
     state = good_state()
     digest = with_paragraph(state.digest, "A source said “[T]he firm grew” and costs fell[1][2].")
-    assert "Markdown link or image" not in " ".join(validate_digest(digest, state.items))
+    assert "Markdown link or image" not in " ".join(validate_digest(digest, state.items, ALLOWED))
 
 
 def test_characters_that_could_break_a_sources_link_are_percent_encoded():
@@ -549,7 +560,7 @@ def stages(monkeypatch):
     """Record the stages `run` starts; ingest and extract succeed without touching the network."""
     calls = []
     monkeypatch.setattr(cli, "_ingest_reports", lambda db, feeds: calls.append("ingest") or [FeedReport(source="A")])
-    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: calls.append(f"extract:{days}") or 0)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days, feeds=None: calls.append(f"extract:{days}") or 0)
     return calls
 
 
@@ -637,7 +648,7 @@ def test_a_retry_after_a_failed_ingest_for_the_same_day_succeeds(monkeypatch, en
 
 
 def test_run_goes_on_without_article_text_when_extract_fails(monkeypatch, env, stages, capsys):
-    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: stages.append("extract") or 1)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days, feeds=None: stages.append("extract") or 1)
     script(monkeypatch, [make_draft(300), APPROVE])
     assert run_cli(monkeypatch, env) == 0
     assert "feed text only" in capsys.readouterr().err and files(env[1]) == ["2026-10-14.json", "2026-10-14.md", "index.md"]
@@ -702,7 +713,7 @@ class FakeFetcher:
     def set_host_delay(self, host, seconds):
         pass
 
-    def fetch(self, url):
+    def fetch(self, url, **kwargs):
         if url.endswith("/robots.txt"):
             return 404, b""
         if any(name in url for name in self.down):
@@ -723,9 +734,12 @@ def test_a_flaky_feed_stops_run_and_the_retry_for_the_same_day_saves_without_dup
     feeds.write_text(
         '[[feeds]]\nname = "Good"\nurl = "https://good.example.com/feed"\ncategory = "t"\n'
         '[[feeds]]\nname = "Flaky"\nurl = "https://flaky.example.com/feed"\ncategory = "t"\n'
+        + "".join(f'[[feeds]]\nname = "{n}"\nurl = "https://wire.example.com/feed"\ncategory = "t"\nallowed_domains = ["example.com"]\n'
+                  for n in ("Example Finance", "Example Review", "Example Wire", "Hostile Blog"))
     )
+    monkeypatch.setattr(cli, "load_sources", load_sources)  # the real loader reads this file
     monkeypatch.setattr(cli, "HttpFetcher", FakeFetcher)
-    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days: 0)
+    monkeypatch.setattr(cli, "run_extract", lambda db, limit, days, feeds=None: 0)
     FakeFetcher.down = {"flaky"}
     script(monkeypatch, [make_draft(300), APPROVE])
     assert run_cli(monkeypatch, env, "--feeds", str(feeds)) == 1

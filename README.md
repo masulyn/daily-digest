@@ -1,6 +1,6 @@
 # daily-digest
 
-Turns RSS items into a cited digest. See `docs/PRD.md` (what and why) and `docs/DESIGN.md` (how).
+Turns RSS items into a cited digest. See `docs/PRD.md` (what and why), `docs/DESIGN.md` (how) and `docs/SECURITY.md` (how untrusted text is handled, and what is not defended).
 
 ## Daily use
 
@@ -26,7 +26,7 @@ uv run daily-digest eval compare RUN_ID [--to baseline|RUN_ID]
 uv run daily-digest eval spot-check RUN_ID [--n 5]       # random digests beside their sources, with a blank rating line
 ```
 
-The run id is the UTC time plus the git commit; results go to `evals/results/<run-id>/` (a digest, judge scores and notes per case, `results.json`, `summary.md`). A real run needs `ANTHROPIC_API_KEY`. The 7 committed cases are invented; real snapshots are git-ignored because they hold article text from other sites.
+The run id is the UTC time plus the git commit; results go to `evals/results/<run-id>/` (a digest, judge scores and notes per case, `results.json`, `summary.md`). A real run needs `ANTHROPIC_API_KEY`. The 9 committed cases are invented; real snapshots are git-ignored because they hold article text from other sites.
 
 - **What the judge adds:** the pipeline already enforces citations, verbatim quotes, length and the no-opinion rules, and the eval does not recompute them. A second model (`claude-opus-5-5` by default, set under `[eval]` in `config/settings.toml` with its price) scores faithfulness, coverage, audience fit and concision from 1 to 5 against `evals/rubric.toml`, and flags unsupported sentences.
 - **Cost:** a full run of about 9 digests plus judge calls is *estimated* at $1.20 to $1.60 (not yet measured: run `eval run --limit 3` first and read the cost per case). `max_usd_per_eval` (settings, default $2.00) caps generator and judge together: a case starts only if what is left covers a full pipeline cap and the dearest case so far, and the command prints what ran and exits 4 when it stops early.
@@ -40,7 +40,7 @@ The run id is the UTC time plus the git commit; results go to `evals/results/<ru
 
 ```
 uv run daily-digest ingest                    # read the feeds into the local database
-uv run daily-digest extract                   # fetch full text for items whose feed text is short, teaser-like or cut at the extract limit (--days N: how far back, default 2)
+uv run daily-digest extract                   # (only from each feed's allowed domains in config/feeds.toml) fetch full text for items whose feed text is short, teaser-like or cut at the extract limit (--days N: how far back, default 2)
 uv run daily-digest draft --stub              # offline placeholder summaries; no key needed
 uv run daily-digest draft [--date YYYY-MM-DD] # writes the day's digest as Markdown, then a Reviewer checks it (at least two model calls)
 uv run daily-digest draft --debug             # also log every model call and review round (counts and dollars, never text or keys) to stderr

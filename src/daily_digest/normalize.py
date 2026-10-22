@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import unicodedata
 from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -10,6 +11,37 @@ MAX_EXTRACT_CHARS = 1200
 
 # Query parameters that only track where a click came from.
 _TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ref_src", "igshid"}
+
+
+# Variation selectors: invisible marks that can carry data (the supplementary block is used for it).
+_VARIATION_SELECTORS = ((0x180B, 0x180D), (0x180F, 0x180F), (0xFE00, 0xFE0F), (0xE0100, 0xE01EF))
+_TAG_CHARACTERS = (0xE0000, 0xE007F)  # invisible to a person, readable by a model
+
+
+def _is_hidden(char: str) -> bool:
+    code = ord(char)
+    return (
+        unicodedata.category(char) in ("Cc", "Cf")  # controls, zero-width and bidirectional characters, tags
+        or _TAG_CHARACTERS[0] <= code <= _TAG_CHARACTERS[1]
+        or any(low <= code <= high for low, high in _VARIATION_SELECTORS)
+    )
+
+
+def strip_hidden(text: str) -> tuple[str, int]:
+    """The text a model may see, and how many hidden characters were removed from it.
+
+    NFKC first, so look-alike forms fold to plain ones. Characters that are invisible or reorder text
+    are removed; line breaks and tabs become spaces.
+    """
+    kept, removed = [], 0
+    for char in unicodedata.normalize("NFKC", text):
+        if char in "\n\r\t\u2028\u2029":
+            kept.append(" ")
+        elif _is_hidden(char):
+            removed += 1
+        else:
+            kept.append(char)
+    return "".join(kept), removed
 
 
 def canonicalize_url(url: str) -> str:

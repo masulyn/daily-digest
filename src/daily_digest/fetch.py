@@ -17,10 +17,12 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpx
 
 from .contracts import ErrorCode
+from .domains import safe_host
 
 MAX_REDIRECTS = 5
 MAX_BYTES = 2 * 1024 * 1024
-TIMEOUT_SECONDS = 15.0
+TIMEOUT_SECONDS = 15.0  # per read: a server that drips one byte at a time never trips it
+TOTAL_SECONDS = 60.0  # one fetch, redirects included, so a slow-drip response is cut off
 DNS_TIMEOUT_SECONDS = 5.0
 MIN_SECONDS_BETWEEN_REQUESTS = 1.0
 DEFAULT_RETRY_AFTER_SECONDS = 60
@@ -34,7 +36,7 @@ class GuardedFetchFn(Protocol):
     """A fetch that asks `allow(url)` before requesting each hop, redirects included."""
 
     def __call__(
-        self, url: str, *, allow: Callable[[str], bool] | None = None
+        self, url: str, *, allow: Callable[[str], bool] | None = None, permit: Callable[[str], bool] | None = None
     ) -> tuple[int, bytes]: ...
 # resolve(host, port) -> address strings; empty if the host cannot be resolved
 Resolver = Callable[[str, int], list[str]]
@@ -164,15 +166,21 @@ class HttpFetcher:
         self._backoff_until[host] = time.monotonic() + seconds
 
     def fetch(
-        self, url: str, *, allow: Callable[[str], bool] | None = None
+        self, url: str, *, allow: Callable[[str], bool] | None = None, permit: Callable[[str], bool] | None = None
     ) -> tuple[int, bytes]:
         """GET a URL. Returns (status code, body). Raises FetchError on unsafe or failed fetches.
 
         `allow`, if given, is asked about every hop (the first URL and each redirect target)
         before it is requested, so a redirect cannot reach a host whose rules were never read.
         It may raise FetchError itself to give a more specific reason.
+
+        `permit` judges the URL text alone and is asked first at every hop, before any DNS lookup or
+        request, so a link to a host that is not allowed costs the host nothing, not even a lookup.
         """
+        deadline = time.monotonic() + TOTAL_SECONDS
         for _ in range(MAX_REDIRECTS + 1):
+            if permit is not None and not permit(url):
+                raise FetchError(ErrorCode.DOMAIN_NOT_ALLOWED, safe_host(url))
             address = _public_address(url, self._resolve)
             if address is None:
                 raise FetchError(ErrorCode.UNSAFE_URL, f"blocked unsafe URL: {url}")
@@ -193,6 +201,8 @@ class HttpFetcher:
                         self._note_retry_after(host, response)
                     body = bytearray()
                     for chunk in response.iter_bytes():
+                        if time.monotonic() > deadline:
+                            raise FetchError(ErrorCode.FEED_UNREACHABLE, "response too slow")
                         body.extend(chunk)
                         if len(body) > MAX_BYTES:
                             raise FetchError(ErrorCode.RESPONSE_TOO_LARGE, f"response over {MAX_BYTES} bytes")

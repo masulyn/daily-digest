@@ -40,6 +40,20 @@ def test_load_items_returns_only_the_days_unseen_items():
     assert "notes" not in update
 
 
+def test_items_from_an_unknown_feed_or_off_their_feeds_domains_are_dropped_before_any_model_call():
+    store = Store(":memory:")
+    fine = item_on("fine", noon())  # source "s", link on news.example.com
+    stray = item_on("stray", noon()).model_copy(update={"canonical_url": "https://evil.example.org/x", "content_hash": "h-stray"})
+    orphan = item_on("orphan", noon()).model_copy(update={"source": "Gone feed", "content_hash": "h-orphan", "canonical_url": "https://news.example.com/o"})
+    for item in (fine, stray, orphan):
+        store.add_if_new(item)
+    update = load_items(DigestState(target_date=DAY), store, {"s": ("example.com",)})
+    assert [i.id for i in update["items"]] == ["fine"]
+    assert update["notes"] == ["dropped 2 items whose feed or link is not on the allowed list"]
+    nothing = load_items(DigestState(target_date=DAY), store, {})
+    assert nothing["items"] == [] and len(nothing["notes"]) == 2 and "quiet day" in nothing["notes"][1]
+
+
 def test_window_includes_its_start_and_excludes_its_end():
     store = Store(":memory:")
     start, end = day_window(DAY)

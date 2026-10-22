@@ -39,7 +39,7 @@ def test_read_commands_still_work_on_existing_db(command, tmp_path, monkeypatch)
 
 def test_ingest_creates_db_on_first_run(tmp_path, monkeypatch):
     # No feeds, so nothing touches the network; only the database creation is under test.
-    monkeypatch.setattr(cli, "load_sources", lambda path: [])
+    monkeypatch.setattr(cli, "load_sources", lambda path, include_disabled=False: [])
     monkeypatch.setattr(cli, "ingest", lambda *args: [])
     path = tmp_path / "new" / "digest.db"
     _run(monkeypatch, "ingest", "--db", str(path))

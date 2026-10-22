@@ -5,6 +5,7 @@ import re
 from datetime import date, datetime
 
 from .contracts import CandidateItem, CitedSource, Draft, DraftSentence, FinalDigest, ReviewSummary
+from .normalize import strip_hidden
 
 WORDS_PER_MINUTE = 200
 # Only these carry a citation: facts, quotes and attributed views. Trends and transitions do not.
@@ -60,7 +61,7 @@ def build_digest(
                 number_of.setdefault(item_id, len(number_of) + 1)
     sources = [
         CitedSource(
-            number=number, title=by_id[item_id].title, source=by_id[item_id].source,
+            number=number, title=strip_hidden(by_id[item_id].title)[0], source=strip_hidden(by_id[item_id].source)[0],
             published=by_id[item_id].published, url=by_id[item_id].canonical_url,
         )
         for item_id, number in number_of.items()

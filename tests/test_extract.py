@@ -5,15 +5,20 @@ import httpx
 import pytest
 
 from daily_digest.contracts import ErrorCode
-from daily_digest.extract import MAX_ARTICLE_CHARS, article_text_from_html, extract_articles
+from daily_digest import extract as extract_module
+from daily_digest.extract import MAX_ARTICLE_CHARS, article_text_from_html
 from daily_digest.fetch import BackoffError, FetchError, HttpFetcher
 from daily_digest.robots import RobotsChecker
 from daily_digest.store import MAX_EXTRACTION_ATTEMPTS, Store
-from helpers import guarded_fetch, sample_item
+from helpers import TEST_SOURCES, guarded_fetch, sample_item
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PAGE = (FIXTURES / "article_page.html").read_bytes()
 LONG_TEXT = "This sentence is part of a complete feed article. " * 12  # about 600 characters
+
+
+def extract_articles(*args, sources=TEST_SOURCES, **kwargs):
+    return extract_module.extract_articles(*args, sources=sources, **kwargs)
 
 
 def allow_all() -> RobotsChecker:

@@ -10,9 +10,11 @@ import logging
 import os
 import re
 import tempfile
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from .contracts import CandidateItem, Draft, FinalDigest, ProvenanceEntry, PublishedDigest
+from .domains import host_allowed
 from .digest import link_text, render_markdown, review_text
 
 log = logging.getLogger(__name__)
@@ -40,8 +42,11 @@ def digest_path(out_dir: Path, covered) -> Path:
     return out_dir / f"{covered.isoformat()}.md"
 
 
-def validate_digest(digest: FinalDigest, items: list[CandidateItem]) -> list[str]:
-    """Reasons the built digest must not be saved. Fixed wording: never any model or item text."""
+def validate_digest(digest: FinalDigest, items: list[CandidateItem], allowed: Mapping[str, Iterable[str]]) -> list[str]:
+    """Reasons the built digest must not be saved. Fixed wording: never any model or item text.
+
+    `allowed` maps each feed's name to the domains its links may point to.
+    """
     problems = []
     if digest.review.status not in SAVEABLE_STATUSES:
         problems.append("the digest has not been reviewed")
@@ -59,6 +64,8 @@ def validate_digest(digest: FinalDigest, items: list[CandidateItem]) -> list[str
         problems.append("a Sources URL is not one of the day's items")
     if not all(source.url.startswith(("http://", "https://")) for source in digest.sources):
         problems.append("a Sources URL is not an http or https link")
+    if not all(host_allowed(source.url, allowed.get(source.source, ())) for source in digest.sources):
+        problems.append("a Sources URL is not on its feed's allowed domains")
     one_line = lambda text: len(text.splitlines()) == 1  # noqa: E731 - also rejects the empty string
     if not all(one_line(source.title) and one_line(source.source) for source in digest.sources):
         problems.append("a Sources title or name is not a single line")

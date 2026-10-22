@@ -5,6 +5,7 @@ need no network.
 """
 
 import calendar
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -12,6 +13,7 @@ import feedparser
 from pydantic import ValidationError
 
 from .contracts import CandidateItem, ErrorCode, Source
+from .domains import allowed_domains_for, host_allowed, safe_host, safe_text
 from .fetch import FetchError, FetchFn
 from .normalize import (
     canonicalize_url,
@@ -24,6 +26,8 @@ from .normalize import (
 from .robots import RobotsChecker
 from .store import Store
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class FeedReport:
@@ -32,6 +36,7 @@ class FeedReport:
     stored: int = 0
     duplicates: int = 0
     skipped: int = 0  # missing link, title or publish date, or failed validation
+    blocked: int = 0  # the link's host is not on the feed's allowed domains
     error: ErrorCode | None = None
 
 
@@ -97,12 +102,17 @@ def ingest(sources: list[Source], fetch: FetchFn, robots: RobotsChecker, store: 
         if feed.bozo and not feed.entries:
             report.error = ErrorCode.FEED_INVALID
             continue
+        allowed = allowed_domains_for(source)
         with store.transaction():
             for entry in feed.entries:
                 report.entries += 1
                 parsed = parse_entry(source.name, entry)
                 if parsed is None:
                     report.skipped += 1
+                elif not host_allowed(parsed[0].canonical_url, allowed):
+                    report.blocked += 1
+                    host = safe_host(parsed[0].canonical_url)
+                    log.warning("%s feed=%s host=%s", ErrorCode.DOMAIN_NOT_ALLOWED, safe_text(source.name), host)
                 elif store.add_if_new(parsed[0], needs_extraction=parsed[1]):
                     report.stored += 1
                 else:

@@ -55,6 +55,27 @@ def test_hosts_resolving_to_non_public_addresses_are_blocked(addresses):
     assert requests == []
 
 
+@pytest.mark.parametrize("address", ["169.254.169.254", "192.168.1.1", "172.16.0.9", "100.64.0.1", "0.0.0.0", "fd00::1", "fe80::1", "::ffff:127.0.0.1"])
+def test_metadata_link_local_private_and_mapped_addresses_are_blocked(address):
+    requests = []
+    fetcher = make_fetcher(lambda r: requests.append(r) or httpx.Response(200), lambda host, port: [address])
+    with pytest.raises(FetchError) as e:
+        fetcher.fetch("https://feeds.example.com/rss")
+    assert e.value.code == ErrorCode.UNSAFE_URL and requests == []
+
+
+@pytest.mark.parametrize("url", [
+    "file:///etc/passwd", "ftp://feeds.example.com/rss", "http://feeds.example.com/rss", "gopher://feeds.example.com/",
+    "https://169.254.169.254/latest/meta-data/", "https://127.0.0.1/", "https://[::1]/", "https://localhost/", "https:///nohost",
+])
+def test_non_https_schemes_and_literal_internal_addresses_make_no_request(url):
+    requests = []
+    resolver = lambda host, port: ["127.0.0.1"] if host == "localhost" else [host]  # a literal resolves to itself
+    with pytest.raises(FetchError) as e:
+        make_fetcher(lambda r: requests.append(r) or httpx.Response(200), resolver).fetch(url)
+    assert e.value.code == ErrorCode.UNSAFE_URL and requests == []
+
+
 def test_redirect_to_an_unsafe_host_is_blocked():
     requests = []
 

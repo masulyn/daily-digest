@@ -7,16 +7,25 @@ ourselves and follow the standard, except that 429 is treated as a server-side
 "slow down" rather than as a missing file.
 """
 
+from functools import partial
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
+from .domains import host_allowed, parse_host, registrable_domain
 from .fetch import FetchError, FetchFn
 
 
 class RobotsChecker:
-    def __init__(self, fetch: FetchFn, user_agent: str) -> None:
+    """`confine_redirects` limits a robots.txt redirect to the origin's own registrable domain.
+
+    It needs a fetch that accepts `permit` (`HttpFetcher.fetch`). Without it, a robots.txt on an allowed
+    host could redirect the request, and its DNS lookup, to any host.
+    """
+
+    def __init__(self, fetch: FetchFn, user_agent: str, *, confine_redirects: bool = False) -> None:
         self._fetch = fetch
         self._user_agent = user_agent
+        self._confine = confine_redirects
         self._cache: dict[str, RobotFileParser | bool] = {}
         self._unavailable: set[str] = set()
 
@@ -25,7 +34,7 @@ class RobotsChecker:
         if origin in self._cache:
             return self._cache[origin]
         try:
-            status, body = self._fetch(f"{origin}/robots.txt")
+            status, body = self._fetch(f"{origin}/robots.txt", **self._limits(origin))
         except FetchError:
             result: RobotFileParser | bool = False  # cannot tell: be cautious
             self._unavailable.add(origin)
@@ -41,6 +50,12 @@ class RobotsChecker:
                 self._unavailable.add(origin)
         self._cache[origin] = result
         return result
+
+    def _limits(self, origin: str) -> dict:
+        host = parse_host(origin)
+        if not self._confine or host is None:
+            return {}
+        return {"permit": partial(host_allowed, allowed=(registrable_domain(host),))}
 
     def crawl_delay(self, url: str) -> float | None:
         """Seconds the site asks us to wait between requests, if its robots.txt says so."""

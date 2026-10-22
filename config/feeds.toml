@@ -1,5 +1,9 @@
 # Starter RSS feeds for enterprise AI adoption.
 # Tested for reachability and robots.txt on Oct 14-15, 2026.
+#
+# Links in a feed are untrusted, so each feed may link only to its allowed domains (and their
+# subdomains). Without `allowed_domains` that is the feed's own registrable domain, for example
+# cio.com for www.cio.com. A feed that legitimately links elsewhere lists the domains it needs.
 
 [[feeds]]
 name = "CIO.com AI"
@@ -24,6 +28,8 @@ name = "Google Cloud AI blog"
 url = "https://cloudblog.withgoogle.com/products/ai-machine-learning/rss/"
 category = "vendor blog"
 enabled = true
+# The feed is served from withgoogle.com, but its items link to cloud.google.com.
+allowed_domains = ["cloud.google.com", "cloudblog.withgoogle.com"]
 
 # Replaced CIO Dive: its article pages block our HTTP client, so only headlines were usable.
 [[feeds]]

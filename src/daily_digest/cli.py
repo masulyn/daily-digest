@@ -21,6 +21,7 @@ from .config import (
     load_llm_settings,
     load_sources,
 )
+from .domains import allowed_by_source
 from .contracts import ErrorCode, PublishedDigest, ReviewSummary, UsageRecord
 from .digest import render_markdown, review_text
 from .editor import WriterFailed
@@ -55,17 +56,22 @@ def _ingest_reports(db_path: Path, feeds_path: Path) -> list[FeedReport]:
     _warn_if_no_contact()
     sources = load_sources(feeds_path)
     with HttpFetcher() as fetcher, Store(db_path) as store:
-        robots = RobotsChecker(fetcher.fetch, user_agent())
+        robots = RobotsChecker(fetcher.fetch, user_agent(), confine_redirects=True)
         reports = ingest(sources, fetcher.fetch, robots, store)
-        print(f"{'source':34} {'entries':>7} {'stored':>6} {'dupes':>5} {'skipped':>7}  error")
+        print(f"{'source':34} {'entries':>7} {'stored':>6} {'dupes':>5} {'skipped':>7} {'off-list':>8}  error")
         for r in reports:
-            print(f"{r.source:34} {r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7}  {r.error or ''}")
+            counts = f"{r.entries:7} {r.stored:6} {r.duplicates:5} {r.skipped:7} {r.blocked:8}"
+            print(f"{r.source:34} {counts}  {r.error or ''}")
         print(f"\nItems in database: {store.count()}  ({db_path})")
     return reports
 
 
 def run_ingest(db_path: Path, feeds_path: Path) -> int:
-    reports = _ingest_reports(db_path, feeds_path)
+    try:
+        reports = _ingest_reports(db_path, feeds_path)
+    except SettingsError as error:
+        print(_printable(f"error: {error}"), file=sys.stderr)
+        return 2
     # Partial failures are reported in the table; only fail when nothing was ingested.
     return 0 if any(r.error is None for r in reports) else 1
 
@@ -88,16 +94,23 @@ def _positive_int(text: str) -> int:
     return value
 
 
-def run_extract(db_path: Path, limit: int | None, days: int = DEFAULT_EXTRACT_DAYS) -> int:
+def run_extract(
+    db_path: Path, limit: int | None, days: int = DEFAULT_EXTRACT_DAYS, feeds_path: Path = DEFAULT_FEEDS_PATH
+) -> int:
     _warn_if_no_contact()
+    try:
+        sources = load_sources(feeds_path, include_disabled=True)  # stored items of a disabled feed stay fetchable
+    except SettingsError as error:
+        print(_printable(f"error: {error}"), file=sys.stderr)
+        return 2
     store = _open_existing(db_path)
     if store is None:
         return 2
     since = extract_since(date.today(), days)
     with store, HttpFetcher() as fetcher:
-        robots = RobotsChecker(fetcher.fetch, user_agent())
+        robots = RobotsChecker(fetcher.fetch, user_agent(), confine_redirects=True)
         report = extract_articles(
-            store, fetcher.fetch, robots, set_host_delay=fetcher.set_host_delay, limit=limit,
+            store, fetcher.fetch, robots, sources=sources, set_host_delay=fetcher.set_host_delay, limit=limit,
             since=since,
         )
     print(f"Window: items published since {since.date().isoformat()} (--days {days}).")
@@ -201,7 +214,8 @@ def _print_review(state: DigestState) -> None:
 
 
 def run_generate(
-    db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool = True
+    db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool = True,
+    feeds_path: Path = DEFAULT_FEEDS_PATH,
 ) -> int:
     """Make the day's digest for real: run the pipeline, then validate, save, index and mark items seen.
 
@@ -209,7 +223,7 @@ def run_generate(
     repaired, or a digest that failed validation; 2 setup problem; 3 not reviewed (nothing saved).
     """
     try:
-        return _generate(db_path, out_dir, target, client, review_enabled)
+        return _generate(db_path, out_dir, target, client, review_enabled, feeds_path)
     except (LLMError, WriterFailed) as error:
         print(f"error: {_printable(str(error))}. {_retry_advice(error)}", file=sys.stderr)
         return 1
@@ -228,12 +242,19 @@ def _retry_advice(error: Exception) -> str:
     return "Retrying will not help until the cause is fixed (key, settings or request). No digest was saved."
 
 
-def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool) -> int:
+def _generate(
+    db_path: Path, out_dir: Path, target: date, client: MeteredClient, review_enabled: bool, feeds_path: Path
+) -> int:
+    try:
+        allowed = allowed_by_source(load_sources(feeds_path, include_disabled=True))  # before any model call
+    except SettingsError as error:
+        print(_printable(f"error: {error}"), file=sys.stderr)
+        return 2
     store = _open_existing(db_path)
     if store is None:
         return 2
     with store:
-        state = run_digest(store, target, client, review_enabled=review_enabled)
+        state = run_digest(store, target, client, review_enabled=review_enabled, allowed=allowed)
         digest, review = state.digest, state.review
         if digest is None:  # a quiet day, or a draft that could not be repaired
             _print_review(state)
@@ -243,7 +264,7 @@ def _generate(db_path: Path, out_dir: Path, target: date, client: MeteredClient,
             print(_printable(render_markdown(digest)))
             _print_review(state)
             return 3
-        problems = validate_digest(digest, state.items)
+        problems = validate_digest(digest, state.items, allowed)
         if problems:
             for problem in problems:
                 print(f"error: the digest was not saved: {problem}", file=sys.stderr)
@@ -345,10 +366,10 @@ def run_pipeline(
         print(_printable(f"warning: skipping feeds that cannot be read: {_named(lasting)}"), file=sys.stderr)
     print("\n== extract ==")
     days = (date.today() - target).days + 1  # reaches back to the digest day
-    if run_extract(db_path, None, days) != 0:
+    if run_extract(db_path, None, days, feeds_path) != 0:
         print("warning: no article text could be fetched; the digest uses feed text only", file=sys.stderr)
     print("\n== generate ==")
-    return run_generate(db_path, out_dir, target, client, review_enabled)
+    return run_generate(db_path, out_dir, target, client, review_enabled, feeds_path)
 
 
 def _refresh_index(out_dir: Path) -> list[str]:
@@ -429,6 +450,7 @@ def main() -> None:
     p.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML)")
     e = sub.add_parser("extract", help="fetch full article text for items whose feed text is too short")
     e.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
+    e.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML), with each feed's allowed domains")
     e.add_argument("--limit", type=int, default=None, help="maximum number of articles to fetch")
     e.add_argument(
         "--days", type=_positive_int, default=DEFAULT_EXTRACT_DAYS,
@@ -448,6 +470,7 @@ def main() -> None:
     )
     g = sub.add_parser("generate", help="make yesterday's digest for real: review it, save it, mark its items seen")
     g.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
+    g.add_argument("--feeds", type=Path, default=DEFAULT_FEEDS_PATH, help="feed list (TOML), with each feed's allowed domains")
     g.add_argument("--out-dir", type=Path, default=None, help="where digests go (default: newsletters/ in the project)")
     g.add_argument(
         "--date", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",
@@ -496,7 +519,7 @@ def main() -> None:
         with _debug_logging(args.debug):
             if args.command == "run":
                 raise SystemExit(run_pipeline(db_path, args.feeds, out_dir, target, client, not args.no_review))
-            raise SystemExit(run_generate(db_path, out_dir, target, client, not args.no_review))
+            raise SystemExit(run_generate(db_path, out_dir, target, client, not args.no_review, args.feeds))
     if args.command == "draft":
         target = args.date or date.today() - timedelta(days=1)
         client = None
@@ -507,6 +530,6 @@ def main() -> None:
         with _debug_logging(args.debug):
             raise SystemExit(run_draft(args.db or data_dir() / "digest.db", target, client, not args.no_review))
     if args.command == "extract":
-        raise SystemExit(run_extract(args.db or data_dir() / "digest.db", args.limit, args.days))
+        raise SystemExit(run_extract(args.db or data_dir() / "digest.db", args.limit, args.days, args.feeds))
     if args.command == "ingest":
         raise SystemExit(run_ingest(args.db or data_dir() / "digest.db", args.feeds))
