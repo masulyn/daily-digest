@@ -135,7 +135,8 @@ def extract_articles(
         report.considered += 1
         feed = store.source_of(item_id)
         if feed not in allowed:  # not recorded as an attempt, so adding the feed back makes the item fetchable again
-            report.failures[str(ErrorCode.DOMAIN_NOT_ALLOWED)] = report.failures.get(str(ErrorCode.DOMAIN_NOT_ALLOWED), 0) + 1
+            code = str(ErrorCode.DOMAIN_NOT_ALLOWED)
+            report.failures[code] = report.failures.get(code, 0) + 1
             continue
         try:
             status, body = fetch(url, allow=allow, permit=partial(host_allowed, allowed=allowed[feed]))
