@@ -10,8 +10,8 @@ from decimal import Decimal
 from pathlib import Path
 
 from ..config import PROJECT_ROOT, EvalSettings, LLMSettings
-from ..digest import render_markdown
 from ..contracts import Draft, ReviewRound
+from ..digest import render_markdown
 from ..editor import REVISE_PROMPT, SYSTEM_PROMPT, WriterFailed, render_items, word_count
 from ..graph import DigestState, run_digest
 from ..llm import LLMClient, LLMError, MeteredClient
@@ -22,6 +22,7 @@ from .judge import JudgeFailed, judge_digest, judge_system_prompt
 from .models import Case, CaseResult, RunConfig, RunResults
 from .report import render_report
 from .rubric import Rubric
+from .terminal import printable, review_lines
 
 log = logging.getLogger(__name__)
 
@@ -78,22 +79,14 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _printable(text: str) -> str:
-    from ..cli import _printable  # imported late: cli imports the eval commands only when `eval` runs
-
-    return _printable(text)
-
-
 def _failure_text(state: DigestState) -> str:
     """The review block and notes exactly as `draft` prints them, each note once."""
-    from ..cli import _review_lines
-
-    lines = [*_review_lines(state.review)] if state.review else []
-    return _printable("\n".join([*lines, *dict.fromkeys(state.notes)]))
+    lines = [*review_lines(state.review)] if state.review else []
+    return printable("\n".join([*lines, *dict.fromkeys(state.notes)]))
 
 
 def _draft_lines(draft: Draft) -> list[str]:
-    lines = [f"headline: {draft.headline}"]
+    lines = [f"headline: {' '.join(draft.headline.split())}"]
     for section in ("what_you_need_to_know", "worth_a_closer_look"):
         for index, s in enumerate(getattr(draft, section)):
             cites = ", ".join(s.item_ids) or "none"
@@ -112,7 +105,7 @@ def _review_log(rounds: list[ReviewRound]) -> str:
         if not r.issues:
             lines.append("(none)")
         lines.append("")
-    return _printable("\n".join(lines))
+    return printable("\n".join(lines))
 
 
 def run_case(
@@ -135,7 +128,7 @@ def run_case(
             record_pipeline_cost()
             result.status = "error"
             # The checks that failed are fixed wording; neither message echoes the model's reply.
-            result.error = _printable(str(error))
+            result.error = printable(str(error))
             result.failure = f"error: {result.error}"
             _write(case_dir / "failure.txt", result.failure + "\n")
             return result

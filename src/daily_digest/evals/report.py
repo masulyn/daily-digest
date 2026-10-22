@@ -1,6 +1,7 @@
 """Reports over recorded runs: summary, baseline, comparison and the human spot check."""
 
 import random
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -79,7 +80,8 @@ def render_report(run: RunResults) -> str:
     if failures:
         lines += ["", "## Why cases did not pass", ""]
         for c in failures:
-            lines += [f"### {c.id} ({c.status})", "", "```", c.failure, "```", ""]
+            fence = "`" * (max((len(run) for run in re.findall("`+", c.failure)), default=0) + 3)  # outlasts any in the text
+            lines += [f"### {c.id} ({c.status})", "", fence, c.failure, fence, ""]
     lines += ["", "## Weakest cases (the top 3 failures)", ""]
     problems = [c for c in run.cases if c.status in BAD_STATUSES or c.canary_hits]
     ranked = sorted(judged, key=lambda c: c.mean_score)[:3]

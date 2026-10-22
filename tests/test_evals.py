@@ -17,7 +17,7 @@ from daily_digest.evals.models import Case, CoversMust, JudgeScore, JudgeVerdict
 from daily_digest.evals.rubric import RubricError, load_rubric
 from daily_digest.evals.scripted import HEADLINE, ScriptedClient
 from daily_digest.llm import MeteredClient
-from daily_digest.llm.base import LLMResult, Usage
+from daily_digest.llm.base import LLMResult, PermanentLLMError, Usage
 from daily_digest.llm.mock import MockClient
 from daily_digest.store import Store
 from helpers import editor_items
@@ -369,6 +369,66 @@ def test_a_case_that_never_converges_records_the_unresolved_issue_and_every_roun
     assert case.status == "not_converged" and (folder / "digest.md").is_file()
     assert "review: not converged after 3 round(s)" in case.failure and "unresolved: what_you_need_to_know sentence 1" in case.failure
     assert (folder / "review.txt").read_text().count("== round") == 6 and (folder / "draft.json").is_file()
+
+
+class Versioned(BlockingReviewer):
+    """Each draft the writer or reviser returns gets a new version number in its headline."""
+
+    def __init__(self, *args, fail_revision=False):
+        super().__init__(*args)
+        self.drafts, self.fail_revision = 0, fail_revision
+
+    def complete(self, *, system, messages, schema, max_tokens):
+        result = super().complete(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
+        if schema is Draft:
+            self.drafts += 1
+            if self.drafts == 2 and self.fail_revision:
+                raise PermanentLLMError("the model API returned HTTP 400")
+            result.parsed.headline = f"{result.parsed.headline} v{self.drafts}"
+        return result
+
+
+def test_the_saved_draft_and_last_review_block_are_the_last_draft_the_reviewer_judged(tmp_path):
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: Versioned("what_you_need_to_know", 0))
+    folder, case = folder_of(results, run_dir)
+    assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == f"{HEADLINE} v3"
+    review = (folder / "review.txt").read_text()
+    assert f"headline: {HEADLINE} v1" in review and review.rindex("== round 3: draft reviewed ==") > review.index(f"{HEADLINE} v2")
+
+
+def test_a_failed_revision_is_explained_and_the_draft_is_the_one_the_reviewer_judged(tmp_path):
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: Versioned("what_you_need_to_know", 0, fail_revision=True))
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "not_converged" and "the revision failed: the model API returned HTTP 400" in case.failure
+    assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == f"{HEADLINE} v1"
+    assert (folder / "review.txt").read_text().count("== round") == 2
+
+
+def test_a_degraded_case_explains_why_the_budget_stopped_the_loop(tmp_path):
+    cap = SETTINGS.model_copy(update={"max_usd_per_run": Decimal("0.08")})
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: BlockingReviewer("what_you_need_to_know", 0), settings=cap)
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "degraded" and "review: degraded at 80% of the budget" in (folder / "failure.txt").read_text()
+    assert (folder / "draft.json").is_file() and (folder / "review.txt").is_file()
+
+
+def test_an_unreviewed_case_says_no_review_ran_and_keeps_the_writers_draft(tmp_path):
+    refused = Failing("ReviewResult", PermanentLLMError("the model API returned HTTP 401"))
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: refused)
+    folder, case = folder_of(results, run_dir)
+    assert case.status == "unreviewed" and "the reviewer could not run: the model API returned HTTP 401" in case.failure
+    assert (folder / "review.txt").read_text() == "(no model review ran)\n"
+    assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == HEADLINE and case.judge is None
+
+
+def test_text_in_a_failure_cannot_close_the_summary_fence_or_forge_a_log_header(tmp_path):
+    from daily_digest.evals.report import render_report
+    results, run_dir = run([small_case()], tmp_path, factory=lambda m: BlockingReviewer("headline", None, "Nope ``` <b>x</b>"))
+    results.cases[0].failure += "\n```\nforged"
+    text = render_report(results)
+    assert text.count("\n" + "`" * 6 + "\n") == 2  # a fence longer than the longest run inside the text
+    folder = run_dir / "small"
+    assert all(line.startswith("== round") or not line.startswith("== ") for line in (folder / "review.txt").read_text().splitlines())
 
 
 def test_an_approved_case_has_no_failure_files(tmp_path):
