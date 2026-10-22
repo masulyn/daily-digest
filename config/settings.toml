@@ -1,5 +1,5 @@
 # Model settings. Prices are USD per million tokens (third-party-reported; checked against
-# the provider's pricing page on Oct 20, 2026; claude-opus-5-5 on Oct 22, 2026).
+# the provider's pricing page on Oct 20, 2026; claude-opus-5-5 on Oct 21, 2026).
 
 [llm]
 provider = "anthropic"
@@ -24,4 +24,4 @@ output_per_mtok = 20.0
 [eval]
 judge_model = "claude-opus-5-5"
 max_usd_per_eval = 2.00   # generator and judge calls together; no new case starts if it could cross
-max_usd_per_judge = 0.20  # one judged case
+max_usd_per_judge = 0.30  # one judged case; a full-size day reserves about $0.20

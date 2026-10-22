@@ -415,7 +415,7 @@ General: single-column, content-first, generous whitespace, readable body text a
 | R22 | **Secrets leakage** | Environment/keychain only; log scrubbing; the test in FR-9.6. |
 | R23 | **Agent merge conflicts during development** | Directory ownership and frozen contracts (DESIGN.md section 7); a contract-change PR process. |
 | R24 | **Bias or low-quality sources dominate** | No single source contributes more than 40% of cited items; owner-editable feed list; Reviewer checklist item 8. |
-| R25 | **Swapping the model or provider changes output quality or breaks structured output** | Schema validation on every handoff (NFR-1); provider adapters behind one interface (NFR-11); contract and security tests run against the mock provider; eval suite before adopting a new model (section 7 TODO). |
+| R25 | **Swapping the model or provider changes output quality or breaks structured output** | Schema validation on every handoff (NFR-1); provider adapters behind one interface (NFR-11); contract and security tests run against the mock provider; eval suite before adopting a new model (section 7). |
 | R26 | **Provider price changes make runs cost more than planned** | Dollar budgets from a price table in config (NFR-8); per-run and monthly caps; cost logged per run. |
 
 ## 6. Decisions & Remaining Open Items
@@ -446,7 +446,7 @@ General: single-column, content-first, generous whitespace, readable body text a
 - **Judge:** a different model from the generator (`[eval] judge_model` in `config/settings.toml`, default `claude-opus-5-5`), with its own metered client. It returns the four scores with a rationale each, the sentences it finds unsupported or overstated, and whether each `must_cover` item was used. Item text is untrusted data and appears only inside delimiters in the user message.
 - **Not repeated:** citations, verbatim quotes, word count, headline length, URLs and the no-opinion scan are already enforced by the Writer, Reviewer and Publisher. The eval reads the pipeline's own outcome (status, rounds, removed sentences, cost) as metrics instead.
 - **Reports:** `eval report` (cases, the weakest 3, common problem types, pipeline rates, cost), `eval baseline` (`evals/baseline.json`, committed), `eval compare` (per-dimension deltas, what changed in config and prompt hashes, flags for a drop of 0.5 or more, a new canary hit or a new failed day) and `eval spot-check` (random digests beside their sources for a human check of the judge).
-- **Cost:** an eval-wide cap `max_usd_per_eval` (default $2.00) covers generator and judge calls together. A full run of 10 cases is estimated at $1.20 to $1.60.
+- **Cost:** an eval-wide cap `max_usd_per_eval` (settings, default $2.00) covers generator and judge calls together. The cost of a full run is an estimate until the first real run measures it (see the README).
 
 **Limits.** Each case runs once and model output varies, so small differences are noise; `compare` flags size, not significance. The success metrics in section 1 that depend on this are measured only as far as the judge's faithfulness score and the pipeline's own checks go.
 
@@ -459,4 +459,4 @@ General: single-column, content-first, generous whitespace, readable body text a
 - Security tests from Feature 9 pass (prompt injection, SSRF, secrets, privilege).
 - Cost cap and logging working (NFR-8, NFR-6).
 - A 3 to 5 minute screen-recorded demo.
-- Evals are out of scope for the sprint unless time remains (section 7).
+- The eval suite exists (section 7). Its baseline and a human spot check are still to be done by the author.

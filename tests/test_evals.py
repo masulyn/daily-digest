@@ -9,10 +9,10 @@ import pytest
 
 from daily_digest import cli
 from daily_digest.config import DEFAULT_NEWSLETTERS_DIR, load_eval_settings, load_llm_settings
-from daily_digest.contracts import CandidateItem, Draft
+from daily_digest.contracts import Draft
 from daily_digest.evals import runner
 from daily_digest.evals.cases import CaseError, load_case, load_cases, snapshot_day
-from daily_digest.evals.judge import JudgeFailed, judge_digest, judge_message, judge_system_prompt
+from daily_digest.evals.judge import JudgeFailed, judge_digest, judge_system_prompt
 from daily_digest.evals.models import Case, CoversMust, JudgeScore, JudgeVerdict, UnsupportedSentence
 from daily_digest.evals.rubric import RubricError, load_rubric
 from daily_digest.evals.scripted import HEADLINE, ScriptedClient
@@ -46,9 +46,9 @@ class Recording(ScriptedClient):
         return super().complete(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
 
 
-def run(cases, tmp_path, *, factory=None, judge=True, eval_settings=EVAL_SETTINGS, run_id="r1"):
+def run(cases, tmp_path, *, factory=None, judge=True, eval_settings=EVAL_SETTINGS, run_id="r1", settings=SETTINGS):
     return runner.run_eval(
-        cases, settings=SETTINGS, eval_settings=eval_settings, rubric=RUBRIC, factory=factory or (lambda m: ScriptedClient()),
+        cases, settings=settings, eval_settings=eval_settings, rubric=RUBRIC, factory=factory or (lambda m: ScriptedClient()),
         judge_model="claude-opus-5-5", judge_enabled=judge, mock=True, out_root=tmp_path / "results", run_id=run_id, now=NOW, git_dirty=False,
     )
 
@@ -267,16 +267,57 @@ def test_results_record_the_config_prompt_hashes_and_rubric_version(tmp_path, mo
     assert changed["writer"] != saved["prompt_hashes"]["writer"] and changed["review"] == saved["prompt_hashes"]["review"]
 
 
-def test_the_eval_cap_stops_new_cases_and_the_total_never_passes_it(tmp_path):
-    cases = [small_case(f"case-{n}") for n in range(4)]
-    capped = EVAL_SETTINGS.model_copy(update={"max_usd_per_eval": Decimal("0.07")})
+def test_the_eval_cap_stops_new_cases_before_a_case_could_be_squeezed_and_the_total_never_passes_it(tmp_path):
+    cases = [small_case(f"case-{n}") for n in range(6)]
+    capped = EVAL_SETTINGS.model_copy(update={"max_usd_per_eval": Decimal("0.30")})  # a pipeline cap is 0.25; a case costs about 0.04
     results, _ = run(cases, tmp_path, eval_settings=capped)
-    assert results.stopped_by_cap and 0 < len(results.cases) < 4
+    assert results.stopped_by_cap and 0 < len(results.cases) < 6
     assert results.skipped_cases == [c.id for c in cases][len(results.cases):]
-    assert Decimal(results.total_usd) <= Decimal("0.07")
-    tiny = EVAL_SETTINGS.model_copy(update={"max_usd_per_eval": Decimal("0.02")})
-    small, _ = run([small_case()], tmp_path, eval_settings=tiny, run_id="tiny")
-    assert Decimal(small.total_usd) <= Decimal("0.02") and small.cases == [] and small.skipped_cases == ["small"]
+    assert Decimal(results.total_usd) <= Decimal("0.30")
+    assert {c.status for c in results.cases} == {"approved"}  # no case ended degraded or unreviewed because of the cap
+    none, _ = run([small_case()], tmp_path, eval_settings=EVAL_SETTINGS.model_copy(update={"max_usd_per_eval": Decimal("0.20")}), run_id="none")
+    assert none.cases == [] and none.skipped_cases == ["small"] and Decimal(none.total_usd) == 0
+
+
+def test_the_judge_is_capped_by_what_the_pipeline_left(tmp_path):
+    tight = EVAL_SETTINGS.model_copy(update={"max_usd_per_eval": Decimal("0.26")})
+    results, _ = run([small_case()], tmp_path, eval_settings=tight)
+    assert Decimal(results.total_usd) <= Decimal("0.26") and results.cases[0].status == "approved"
+
+
+class Failing(ScriptedClient):
+    def __init__(self, fail_on, error):
+        self.fail_on, self.error = fail_on, error
+
+    def complete(self, *, system, messages, schema, max_tokens):
+        if schema.__name__ == self.fail_on:
+            raise self.error
+        return super().complete(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
+
+
+def test_recorded_errors_hold_no_item_judge_or_key_text(tmp_path):
+    from daily_digest.llm import OutputInvalidError, PermanentLLMError
+    secret = "SECRET-sk-ant-REPLY"
+    judge_down = Failing("JudgeVerdict", OutputInvalidError("score: must be at most 5", raw_text=secret))
+    results, _ = run([small_case()], tmp_path, factory=lambda m: judge_down, run_id="a")
+    assert results.cases[0].judge_error == "the judge's reply failed validation twice" and secret not in results.model_dump_json()
+    refused = Failing("Draft", PermanentLLMError("the model API returned HTTP 401"))
+    results, _ = run([small_case()], tmp_path, factory=lambda m: refused, run_id="b")
+    assert results.cases[0].status == "error" and results.cases[0].error == "the model API returned HTTP 401"
+    short = Failing("Draft", OutputInvalidError("x", raw_text=secret))
+    results, _ = run([small_case()], tmp_path, factory=lambda m: short, run_id="c")
+    assert results.cases[0].error == "the writer could not produce a valid draft" and secret not in results.model_dump_json()
+
+
+def test_more_than_720_items_still_land_on_the_case_day():
+    big = small_case(count=5).model_copy(update={"items": [
+        editor_items(DAY, "a1")[0].model_copy(update={"id": f"x{n}", "canonical_url": f"https://news.example.com/x{n}", "content_hash": f"h{n}"})
+        for n in range(800)
+    ]})
+    store = runner._load_into_store(big)
+    from daily_digest.graph import day_window
+    start, end = day_window(DAY)
+    assert len(store.items_published_between(start, end)) == 800
 
 
 # --- reports ---------------------------------------------------------------------------
@@ -330,6 +371,18 @@ def test_the_report_lists_canary_hits_the_weakest_three_and_pipeline_rates(tmp_p
     text = render_report(results)
     assert text.index("CANARY HITS") < text.index("## Cases")
     assert "Weakest cases" in text and "beta" in text and "approved 2 (100%)" in text and "Cost per case: mean" in text
+
+
+def test_a_case_that_was_scored_and_now_has_no_scores_is_flagged_and_a_partial_run_is_no_baseline(tmp_path):
+    from daily_digest.evals.report import ReportError, compare, make_baseline
+    before = make_baseline(hand_run(tmp_path, 4, run_id="old"))
+    now = hand_run(tmp_path, 4, run_id="new")
+    now.cases[1].judge, now.cases[1].judge_error = None, "the judge's reply failed validation twice"
+    assert any("beta was scored before and has no scores now" in f for f in compare(now, before)[1])
+    now.cases[1].judge = hand_run(tmp_path, 4, run_id="x").cases[0].judge
+    now.stopped_by_cap = True
+    with pytest.raises(ReportError, match="partial"):
+        make_baseline(now)
 
 
 def test_baselines_need_force_to_overwrite_and_refuse_mock_runs(tmp_path):
@@ -398,7 +451,7 @@ def test_eval_run_filters_by_category_and_limit(monkeypatch, evals_dir):
 
 def test_the_cap_exits_four_after_printing_the_partial_results(monkeypatch, evals_dir, capsys):
     from daily_digest.evals import commands
-    monkeypatch.setattr(commands, "load_eval_settings", lambda path: EVAL_SETTINGS.model_copy(update={"max_usd_per_eval": Decimal("0.07")}))
+    monkeypatch.setattr(commands, "load_eval_settings", lambda path: EVAL_SETTINGS.model_copy(update={"max_usd_per_eval": Decimal("0.30")}))
     assert eval_cli(monkeypatch, "run", "--mock", "--evals-dir", str(evals_dir)) == 4
     captured = capsys.readouterr()
     assert "Stopped by the eval spend cap" in captured.out and "eval cap" in captured.err

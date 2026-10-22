@@ -111,6 +111,8 @@ def make_baseline(run: RunResults) -> Baseline:
         raise ReportError("a mock run has no real scores and cannot be a baseline")
     if not run.config.judge_enabled or not _judged(run):
         raise ReportError("a run without judge scores cannot be a baseline")
+    if run.stopped_by_cap:
+        raise ReportError("this run was stopped by the eval cap and is partial; run the rest first")
     return Baseline(
         run_id=run.run_id, config=run.config, prompt_hashes=run.prompt_hashes, rubric_version=run.rubric_version,
         cases=[BaselineCase(id=c.id, status=c.status, scores=c.judge.scores if c.judge else None, canary_hits=c.canary_hits)
@@ -190,6 +192,8 @@ def compare(now: RunResults, before: RunResults | Baseline) -> tuple[str, list[s
             flags.append(f"new canary hit in {i}")
         if c.status in BAD_STATUSES and not (o and o.status in BAD_STATUSES):
             flags.append(f"{i} is now {c.status}")
+        if o and o.scores and not c.scores and c.status not in BAD_STATUSES:
+            flags.append(f"{i} was scored before and has no scores now")
     missing = sorted(set(old) - set(cur))
     if missing:
         lines += ["", "Cases in the earlier run but not this one: " + ", ".join(missing) + "."]

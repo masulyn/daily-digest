@@ -159,5 +159,5 @@ Tests: Feature 9.
 
 ## 9. Open items
 - Hosting and scheduling beyond local use.
-- Evals design: PRD section 7 (TODO), to become `docs/EVALS.md`.
+- Evals design: PRD section 7 and the Evals paragraph above.
 - Final feed list beyond the five starters (FR-1.3).

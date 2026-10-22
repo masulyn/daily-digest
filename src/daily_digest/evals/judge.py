@@ -77,7 +77,7 @@ def _one_line(text: str) -> str:
     return clip(" ".join(text.split()))
 
 
-def check_verdict(verdict: JudgeVerdict, draft: Draft, case: Case) -> tuple[JudgeResult, list[str]]:
+def check_verdict(verdict: JudgeVerdict, draft: Draft, case: Case) -> JudgeResult:
     """Code checks on a verdict that already has scores in range. Bad parts are dropped with a note."""
     notes: list[str] = []
     scores, rationales = {}, {}
@@ -110,11 +110,10 @@ def check_verdict(verdict: JudgeVerdict, draft: Draft, case: Case) -> tuple[Judg
         if item_id not in said:
             notes.append("the judge did not say whether a must_cover item was used; counted as not covered")
         covers[item_id] = said.get(item_id, False)
-    result = JudgeResult(
+    return JudgeResult(
         scores=scores, rationales=rationales, unsupported_sentences=kept[:MAX_UNSUPPORTED],
         covers_must=covers, notes=notes, model="", usd="0",
     )
-    return result, notes
 
 
 def judge_digest(
@@ -136,5 +135,5 @@ def judge_digest(
             result = client.complete(messages=messages + previous + [{"role": "user", "content": feedback}], **ask)
         except OutputInvalidError:
             raise JudgeFailed("the judge's reply failed validation twice") from None
-    checked, _ = check_verdict(result.parsed, draft, case)
+    checked = check_verdict(result.parsed, draft, case)
     return checked.model_copy(update={"model": model, "usd": f"{client.spent:.6f}"})
