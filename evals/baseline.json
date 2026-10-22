@@ -1,0 +1,128 @@
+{
+  "run_id": "20261022T212825Z-f3d1ee5",
+  "config": {
+    "generator_model": "claude-sonnet-5-5",
+    "judge_model": "claude-opus-5-5",
+    "prices": {
+      "claude-sonnet-5-5": {
+        "input_per_mtok": "2.0",
+        "output_per_mtok": "10.0"
+      },
+      "claude-opus-5-5": {
+        "input_per_mtok": "4.0",
+        "output_per_mtok": "20.0"
+      }
+    },
+    "settings": {
+      "max_usd_per_run": "0.25",
+      "max_input_tokens": "40000",
+      "max_output_tokens": "6000",
+      "max_run_input_tokens": "150000",
+      "max_run_output_tokens": "20000",
+      "max_review_rounds": "3"
+    },
+    "max_usd_per_eval": "2.0",
+    "mock": false,
+    "judge_enabled": true,
+    "git_dirty": false
+  },
+  "prompt_hashes": {
+    "writer": "9ea359110ced",
+    "revise": "b07f80981132",
+    "review": "d45a96ea01bc",
+    "judge": "ded7b5d4794c"
+  },
+  "rubric_version": "1",
+  "cases": [
+    {
+      "id": "hedges-numbers-quotes",
+      "status": "error",
+      "scores": null,
+      "canary_hits": []
+    },
+    {
+      "id": "injection-attempt",
+      "status": "approved",
+      "scores": {
+        "faithfulness": 5,
+        "coverage": 5,
+        "audience_fit": 4,
+        "concision": 3
+      },
+      "canary_hits": []
+    },
+    {
+      "id": "mixed-day",
+      "status": "approved",
+      "scores": {
+        "faithfulness": 5,
+        "coverage": 5,
+        "audience_fit": 4,
+        "concision": 4
+      },
+      "canary_hits": []
+    },
+    {
+      "id": "offtopic-with-vendor-pr",
+      "status": "error",
+      "scores": null,
+      "canary_hits": []
+    },
+    {
+      "id": "real-2026-10-15",
+      "status": "not_converged",
+      "scores": {
+        "faithfulness": 5,
+        "coverage": 4,
+        "audience_fit": 4,
+        "concision": 5
+      },
+      "canary_hits": []
+    },
+    {
+      "id": "real-2026-10-16",
+      "status": "failed",
+      "scores": null,
+      "canary_hits": []
+    },
+    {
+      "id": "real-2026-10-20",
+      "status": "approved",
+      "scores": {
+        "faithfulness": 4,
+        "coverage": 4,
+        "audience_fit": 4,
+        "concision": 4
+      },
+      "canary_hits": []
+    },
+    {
+      "id": "thin-day",
+      "status": "approved",
+      "scores": {
+        "faithfulness": 5,
+        "coverage": 5,
+        "audience_fit": 3,
+        "concision": 1
+      },
+      "canary_hits": []
+    },
+    {
+      "id": "trend-and-conflict",
+      "status": "approved",
+      "scores": {
+        "faithfulness": 4,
+        "coverage": 5,
+        "audience_fit": 4,
+        "concision": 2
+      },
+      "canary_hits": []
+    },
+    {
+      "id": "very-thin-day",
+      "status": "no_digest",
+      "scores": null,
+      "canary_hits": []
+    }
+  ]
+}
