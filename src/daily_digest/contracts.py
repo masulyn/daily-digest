@@ -34,7 +34,15 @@ class Source(BaseModel):
     @field_validator("allowed_domains")
     @classmethod
     def _domains_are_bare_domains(cls, value: list[str] | None) -> list[str] | None:
-        return None if value is None else [normalize_domain(entry) for entry in value]
+        if value is None:
+            return None
+        cleaned = []
+        for number, entry in enumerate(value, start=1):
+            try:
+                cleaned.append(normalize_domain(entry))
+            except ValueError as error:
+                raise ValueError(f"entry {number}: {error}") from None  # the entry itself is not echoed
+        return cleaned
 
 
 class CandidateItem(BaseModel):
