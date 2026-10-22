@@ -1,0 +1,30 @@
+{
+  "id": "very-thin-day",
+  "category": "thin",
+  "description": "A very thin day: two items. No digest is expected.",
+  "target_date": "2026-10-14",
+  "items": [
+    {
+      "id": "very-thin-day-1",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/very-thin-day/1",
+      "title": "Calder Health appoints a new data chief",
+      "published": "2026-10-14T09:07:00+00:00",
+      "extract": "Calder Health has appointed a new chief data officer.",
+      "article_text": "Calder Health has appointed a new chief data officer. The appointment takes effect on the first of next month. The health system did not give further details.",
+      "content_hash": "eval-very-thin-day-1"
+    },
+    {
+      "id": "very-thin-day-2",
+      "source": "Platform Weekly",
+      "canonical_url": "https://news.example.com/very-thin-day/2",
+      "title": "Quillon AI announces a developer event",
+      "published": "2026-10-14T09:14:00+00:00",
+      "extract": "Quillon AI announced a developer event for next spring.",
+      "article_text": "Quillon AI announced a developer event for next spring. The company said sessions will cover its model and tools. Dates and a venue have not been set.",
+      "content_hash": "eval-very-thin-day-2"
+    }
+  ],
+  "must_cover": [],
+  "canaries": []
+}

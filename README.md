@@ -12,6 +12,29 @@ ANTHROPIC_API_KEY=... uv run daily-digest run [--date YYYY-MM-DD] [--out-dir PAT
 
 `run` does `ingest`, then `extract` (reaching back to the digest day), then `generate`, and exits with `generate`'s code. Before doing any of that it checks whether the day's digest already exists (it then prints `ALREADY_EXISTS` and exits 0, with no fetching and no spend) and that the API key and settings work (exit 2). If any feed fails for a passing reason (network or server trouble) it stops before extract and the model, because the digest would be stale or have a hole that a saved digest makes permanent: exit 1, naming the feeds and saying a retry may work (nothing was saved, so running the same command again starts clean). A feed that fails for a lasting reason (robots.txt disallows it, it is not a valid feed) is skipped with a warning; if every feed is like that, or none is enabled, it stops with exit 2 and names them. Model errors in `generate` (and so in `run`) exit 1 and say whether a retry may help and what it could cost. If page fetching fails it carries on with feed text only and warns. The commands below are the same steps, for running or debugging one at a time.
 
+## Evals
+
+`eval` measures how good the digests are on saved cases, so a change to the model, a prompt or the rubric can be judged by numbers.
+
+```
+uv run daily-digest eval run --mock                      # whole suite on scripted replies: no key, no cost (checks the plumbing only)
+uv run daily-digest eval snapshot --date YYYY-MM-DD      # export a real day from your database as a local case (no model call)
+uv run daily-digest eval run [--limit N] [--cases ID,ID] [--category NAME] [--no-judge] [--judge-model ID]
+uv run daily-digest eval report RUN_ID                   # table, the weakest 3 cases, problem types, pipeline rates, cost
+uv run daily-digest eval baseline RUN_ID [--force]       # record the run's scores in evals/baseline.json (commit it)
+uv run daily-digest eval compare RUN_ID [--to baseline|RUN_ID]
+uv run daily-digest eval spot-check RUN_ID [--n 5]       # random digests beside their sources, with a blank rating line
+```
+
+The run id is the UTC time plus the git commit; results go to `evals/results/<run-id>/` (a digest, judge scores and notes per case, `results.json`, `summary.md`). A real run needs `ANTHROPIC_API_KEY`. The 7 committed cases are invented; real snapshots are git-ignored because they hold article text from other sites.
+
+- **What the judge adds:** the pipeline already enforces citations, verbatim quotes, length and the no-opinion rules, and the eval does not recompute them. A second model (`claude-opus-5-5` by default, set under `[eval]` in `config/settings.toml` with its price) scores faithfulness, coverage, audience fit and concision from 1 to 5 against `evals/rubric.toml`, and flags unsupported sentences.
+- **Cost:** a full run of about 9 digests plus judge calls is *estimated* at $1.20 to $1.60 (not yet measured: run `eval run --limit 3` first and read the cost per case). `max_usd_per_eval` (settings, default $2.00) caps generator and judge together: a case starts only if what is left covers a full pipeline cap and the dearest case so far, and the command prints what ran and exits 4 when it stops early.
+- **Canary check:** a case can list strings that must not appear in the digest (the injection case does). A hit fails the case and the command exits 1.
+- **Reading a comparison:** each case runs once, so small score changes are noise. `compare` flags a drop of 0.5 or more in a dimension mean, a new canary hit or a new failed day, and says what changed in config, prompts and rubric. It exits 1 when it flags something.
+- **Exit codes:** `0` done; `1` a canary hit or a flagged comparison; `2` a setup problem (no key, bad settings, rubric or case file, unknown id or run); `4` stopped by the eval cap.
+- **Trust the numbers only after a human check:** run `eval spot-check`, read five digests next to the judge's scores, and see whether you agree.
+
 ## Commands
 
 ```

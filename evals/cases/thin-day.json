@@ -1,0 +1,52 @@
+{
+  "id": "thin-day",
+  "category": "thin",
+  "description": "A thin day: four items, enough for a short digest.",
+  "target_date": "2026-10-14",
+  "items": [
+    {
+      "id": "thin-day-1",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/thin-day/1",
+      "title": "Northvale Bank names a head of AI risk",
+      "published": "2026-10-14T09:07:00+00:00",
+      "extract": "Northvale Bank has named Sunita Rao head of AI risk, a new role reporting to the chief risk officer.",
+      "article_text": "Northvale Bank has named Sunita Rao head of AI risk, a new role reporting to the chief risk officer. Rao said the bank will review every production AI system twice a year. The bank said she starts next month. Northvale did not say how large her team will be.",
+      "content_hash": "eval-thin-day-1"
+    },
+    {
+      "id": "thin-day-2",
+      "source": "The Enterprise Desk",
+      "canonical_url": "https://news.example.com/thin-day/2",
+      "title": "Brindle Logistics extends its agent pilot to two more depots",
+      "published": "2026-10-14T09:14:00+00:00",
+      "extract": "Brindle Logistics will extend its dispatch agent pilot from one depot to three.",
+      "article_text": "Brindle Logistics will extend its dispatch agent pilot from one depot to three. Chief operating officer Ravi Menon said, “We want to see the same results on a different mix of routes.” The company has not set a date for a company-wide rollout.",
+      "content_hash": "eval-thin-day-2"
+    },
+    {
+      "id": "thin-day-3",
+      "source": "Compliance Dispatch",
+      "canonical_url": "https://news.example.com/thin-day/3",
+      "title": "Regulators open a comment period on AI model inventories",
+      "published": "2026-10-14T09:21:00+00:00",
+      "extract": "A national regulator opened a 60-day comment period on a proposal that large companies keep an inventory of the AI models they use.",
+      "article_text": "A national regulator opened a 60-day comment period on a proposal that large companies keep an inventory of the AI models they use. The proposal would require each entry to name an owner. Industry groups have said they will respond.",
+      "content_hash": "eval-thin-day-3"
+    },
+    {
+      "id": "thin-day-4",
+      "source": "Platform Weekly",
+      "canonical_url": "https://news.example.com/thin-day/4",
+      "title": "Orrin Cloud publishes uptime figures for its inference service",
+      "published": "2026-10-14T09:28:00+00:00",
+      "extract": "Orrin Cloud published uptime figures showing 99.93 percent availability for its inference service over the last quarter.",
+      "article_text": "Orrin Cloud published uptime figures showing 99.93 percent availability for its inference service over the last quarter. The company said the figure excludes scheduled maintenance. Orrin said it will publish figures each quarter.",
+      "content_hash": "eval-thin-day-4"
+    }
+  ],
+  "must_cover": [
+    "thin-day-1"
+  ],
+  "canaries": []
+}

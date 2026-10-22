@@ -1,0 +1,103 @@
+{
+  "id": "offtopic-with-vendor-pr",
+  "category": "relevance",
+  "description": "A mostly off-topic day with two relevant items and a vendor press release written as news.",
+  "target_date": "2026-10-14",
+  "items": [
+    {
+      "id": "offtopic-with-vendor-pr-1",
+      "source": "Ledger Wire",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/1",
+      "title": "Brindle Logistics reports results of its dispatch agents after six months",
+      "published": "2026-10-14T09:07:00+00:00",
+      "extract": "Brindle Logistics reported that its dispatch agents have run for six months and handled 71 percent of assignments without human changes.",
+      "article_text": "Brindle Logistics reported that its dispatch agents have run for six months and handled 71 percent of assignments without human changes. Chief operating officer Ravi Menon said, “The remaining 29 percent are where the hard cases are.” The company said driver wait time fell 12 percent. Brindle said two incidents of wrong assignments occurred and were corrected.",
+      "content_hash": "eval-offtopic-with-vendor-pr-1"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-2",
+      "source": "Compliance Dispatch",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/2",
+      "title": "Regulator fines a lender over undisclosed use of automated decisions",
+      "published": "2026-10-14T09:14:00+00:00",
+      "extract": "A national regulator fined a lender 3.5 million dollars for not telling applicants that automated systems helped decide their loans.",
+      "article_text": "A national regulator fined a lender 3.5 million dollars for not telling applicants that automated systems helped decide their loans. The lender said it has changed its disclosures. The regulator said the case shows its focus on transparency in automated decisions.",
+      "content_hash": "eval-offtopic-with-vendor-pr-2"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-3",
+      "source": "Vendor Newswire",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/3",
+      "title": "Tessel Systems launches the industry's most powerful AI platform",
+      "published": "2026-10-14T09:21:00+00:00",
+      "extract": "Tessel Systems today announced the launch of what it calls the industry's most powerful AI platform.",
+      "article_text": "Tessel Systems today announced the launch of what it calls the industry's most powerful AI platform. CEO Marcus Dahl said, “Tessel will transform how every company works.” The company said the platform is trusted by leading enterprises, none of which were named. Tessel says customers see results immediately. No pricing or performance data was provided.",
+      "content_hash": "eval-offtopic-with-vendor-pr-3"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-4",
+      "source": "Gadget Gazette",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/4",
+      "title": "Veyra Labs smartwatch gets a new AI coach",
+      "published": "2026-10-14T09:28:00+00:00",
+      "extract": "Veyra Labs updated its smartwatch with an AI fitness coach.",
+      "article_text": "Veyra Labs updated its smartwatch with an AI fitness coach. The update is free for current owners. Veyra said the coach adapts to a user's sleep. Reviewers said battery life dropped in early tests.",
+      "content_hash": "eval-offtopic-with-vendor-pr-4"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-5",
+      "source": "Market Murmur",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/5",
+      "title": "Streaming star's AI clone sparks fan debate",
+      "published": "2026-10-14T09:35:00+00:00",
+      "extract": "A streaming personality released an AI voice clone of themselves, and fans are divided over it.",
+      "article_text": "A streaming personality released an AI voice clone of themselves, and fans are divided over it. Fans on social media have posted jokes and complaints. The personality said the clone is a fun experiment.",
+      "content_hash": "eval-offtopic-with-vendor-pr-5"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-6",
+      "source": "Gadget Gazette",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/6",
+      "title": "Best AI photo apps for holiday pictures",
+      "published": "2026-10-14T09:42:00+00:00",
+      "extract": "Our reviewers picked their favorite AI photo apps for holiday pictures.",
+      "article_text": "Our reviewers picked their favorite AI photo apps for holiday pictures. The apps remove backgrounds and fix lighting. Most are free with in-app purchases. Prices vary by app.",
+      "content_hash": "eval-offtopic-with-vendor-pr-6"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-7",
+      "source": "Market Murmur",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/7",
+      "title": "Billionaire says AI will change everything, again",
+      "published": "2026-10-14T09:49:00+00:00",
+      "extract": "A well-known investor said in an interview that AI will change everything within ten years.",
+      "article_text": "A well-known investor said in an interview that AI will change everything within ten years. He did not offer new evidence. The interview was widely shared. Several commentators disagreed with his timeline.",
+      "content_hash": "eval-offtopic-with-vendor-pr-7"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-8",
+      "source": "Gadget Gazette",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/8",
+      "title": "Smart speaker maker adds an AI joke mode",
+      "published": "2026-10-14T09:56:00+00:00",
+      "extract": "A smart speaker maker added an AI joke mode to its newest speaker.",
+      "article_text": "A smart speaker maker added an AI joke mode to its newest speaker. The mode tells jokes on request. The update is rolling out this week. The company said more modes are planned.",
+      "content_hash": "eval-offtopic-with-vendor-pr-8"
+    },
+    {
+      "id": "offtopic-with-vendor-pr-9",
+      "source": "Platform Weekly",
+      "canonical_url": "https://news.example.com/offtopic-with-vendor-pr/9",
+      "title": "Orrin Cloud adds spending alerts for agent workloads",
+      "published": "2026-10-14T09:03:00+00:00",
+      "extract": "Orrin Cloud added spending alerts that warn customers when an agent workload passes a set budget.",
+      "article_text": "Orrin Cloud added spending alerts that warn customers when an agent workload passes a set budget. The alerts are included in all plans. Orrin said customers asked for the feature after unexpected bills. The company did not say how quickly alerts fire.",
+      "content_hash": "eval-offtopic-with-vendor-pr-9"
+    }
+  ],
+  "must_cover": [
+    "offtopic-with-vendor-pr-1",
+    "offtopic-with-vendor-pr-2"
+  ],
+  "canaries": []
+}

@@ -385,6 +385,42 @@ def _debug_logging(enabled: bool) -> Iterator[None]:
         logger.propagate = True
 
 
+def _add_eval_parser(sub) -> None:
+    ev = sub.add_parser("eval", help="measure digest quality on saved cases with a judge model")
+    steps = ev.add_subparsers(dest="eval_command", required=True)
+
+    def common(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--evals-dir", type=Path, default=None, help="cases, rubric and baseline (default: evals/ in the project)")
+        p.add_argument("--out-dir", type=Path, default=None, help="where run folders go (default: <evals dir>/results)")
+
+    r = steps.add_parser("run", help="run the pipeline on each case and judge the digest")
+    common(r)
+    r.add_argument("--cases", default=None, metavar="ID,ID", help="only these case ids")
+    r.add_argument("--category", default=None, help="only cases in this category")
+    r.add_argument("--limit", type=_positive_int, default=None, help="run at most N cases")
+    r.add_argument("--judge-model", default=None, help="judge model id (default: [eval] judge_model in settings)")
+    r.add_argument("--no-judge", action="store_true", help="run the pipeline only; no judge calls")
+    r.add_argument("--mock", action="store_true", help="scripted replies: no key, no network, no cost")
+    r.add_argument("--debug", action="store_true", help="log every model call to stderr (numbers only)")
+    sn = steps.add_parser("snapshot", help="export one day's stored items as a local, git-ignored case")
+    common(sn)
+    sn.add_argument("--date", type=date.fromisoformat, required=True, metavar="YYYY-MM-DD")
+    sn.add_argument("--db", type=Path, default=None, help="database file (default: <data dir>/digest.db)")
+    for name, text in (("report", "tables, weakest cases and rates for a run"), ("baseline", "record a run as the baseline"),
+                       ("compare", "compare a run with the baseline or another run"),
+                       ("spot-check", "write random digests beside their sources for a human check")):
+        p = steps.add_parser(name, help=text)
+        common(p)
+        p.add_argument("run_id")
+        if name == "baseline":
+            p.add_argument("--force", action="store_true", help="replace an existing baseline")
+        if name == "compare":
+            p.add_argument("--to", default="baseline", metavar="baseline|RUN_ID")
+        if name == "spot-check":
+            p.add_argument("--n", type=_positive_int, default=5)
+            p.add_argument("--seed", type=int, default=None, help="make the random pick repeatable")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="daily-digest")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -437,7 +473,12 @@ def main() -> None:
         "--no-review", action="store_true",
         help="skip the Reviewer; nothing is saved and the exit code is 3 (to test the pipeline cheaply)",
     )
+    _add_eval_parser(sub)
     args = parser.parse_args()
+    if args.command == "eval":
+        from .evals.commands import run_eval_command
+
+        raise SystemExit(run_eval_command(args))
     if args.command in ("generate", "run"):
         target = args.date or date.today() - timedelta(days=1)
         if target >= date.today():
