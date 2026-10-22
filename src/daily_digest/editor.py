@@ -13,6 +13,7 @@ from .contracts import CandidateItem, Draft, DraftIssue, DraftSentence
 from .digest import sentences, word_count
 from .llm import BudgetedClient, OutputInvalidError
 from .llm.metered import estimate_input_tokens
+from .normalize import strip_hidden
 
 MIN_ITEMS = 3
 MAX_HEADLINE_WORDS = 12
@@ -179,15 +180,36 @@ def normalize(text: str) -> str:
     return " ".join(text.translate(_CURLY).split())
 
 
+def _clean_for_model(text: str) -> str:
+    """Item text as a model sees it: hidden characters removed, then angle brackets neutralised.
+
+    Quote and speaker checks compare against this text, so a quote the model copies still matches.
+    """
+    return escape(strip_hidden(text)[0])
+
+
+def hidden_text_note(items: list[CandidateItem]) -> list[str]:
+    """One note saying how many hidden characters were removed, or none. It never says what they were."""
+    counts = [
+        sum(strip_hidden(t)[1] for t in (item.title, item.source, item.article_text or item.extract))
+        for item in items
+    ]
+    total = sum(counts)
+    if not total:
+        return []
+    affected = sum(1 for c in counts if c)
+    return [f"removed {total} hidden characters from {affected} items"]
+
+
 def render_items(items: list[CandidateItem]) -> tuple[str, dict[str, SentItem]]:
     """The item blocks and, per item id, exactly the text that was sent for it."""
     blocks, sent = [], {}
     for item in items:
-        item_id, title = escape(item.id), escape(item.title)
-        body = escape(item.article_text or item.extract)
-        sent[item.id] = SentItem(title=title, body=body, source=escape(item.source))
+        item_id, title = escape(item.id), _clean_for_model(item.title)
+        body, source = _clean_for_model(item.article_text or item.extract), _clean_for_model(item.source)
+        sent[item.id] = SentItem(title=title, body=body, source=source)
         blocks.append(
-            f"<<<ITEM {item_id}>>>\nsource: {escape(item.source)}\ntitle: {title}\n"
+            f"<<<ITEM {item_id}>>>\nsource: {source}\ntitle: {title}\n"
             f"published: {item.published.isoformat()}\ntext: {body}\n<<<END ITEM {item_id}>>>"
         )
     return "\n\n".join(blocks), sent

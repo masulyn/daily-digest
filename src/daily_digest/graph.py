@@ -14,7 +14,7 @@ from pydantic import AwareDatetime, BaseModel
 
 from .contracts import CandidateItem, Draft, FinalDigest, ItemSummary, ReviewSummary
 from .digest import build_digest
-from .editor import MIN_ITEMS, fit_items, write_draft
+from .editor import MIN_ITEMS, fit_items, hidden_text_note, write_draft
 from .llm import BudgetedClient
 from .reviewer import run_review
 from .store import Store
@@ -77,7 +77,7 @@ def editor_writer(state: DigestState, client: BudgetedClient) -> dict:
         raise ValueError("generated_at must be set before the editor_writer node runs")
     sent_items, fit_notes = fit_items(state.items, client)
     draft, notes = write_draft(sent_items, client, fit=False)
-    return {"draft": draft, "sent_items": sent_items, "notes": [*fit_notes, *notes]}
+    return {"draft": draft, "sent_items": sent_items, "notes": [*fit_notes, *hidden_text_note(sent_items), *notes]}
 
 
 def review(state: DigestState, client: BudgetedClient, enabled: bool) -> dict:
