@@ -472,10 +472,11 @@ def fit_items(items: list[CandidateItem], client: BudgetedClient) -> tuple[list[
     first, the only ranking available, and keeps its order.
     """
     budget = client.max_input_tokens - client.max_output_tokens
+    longest_prompt = max(SYSTEM_PROMPT, LIGHT_SYSTEM_PROMPT, key=len)  # the light-day prompt is a little longer
 
     def too_big(current: list[CandidateItem]) -> bool:
         prompt, _ = render_items(current)
-        return estimate_input_tokens(SYSTEM_PROMPT, [{"content": prompt}], Draft) > budget
+        return estimate_input_tokens(longest_prompt, [{"content": prompt}], Draft) > budget
 
     fitted, degraded, dropped = list(items), 0, 0
     while fitted and too_big(fitted):

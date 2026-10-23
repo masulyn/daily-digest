@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from daily_digest.config import load_llm_settings
-from daily_digest.contracts import PublishedDigest, ReviewResult, ReviewSummary, UsageRecord
+from daily_digest.contracts import PublishedDigest, ReviewIssue, ReviewResult, UsageRecord
 from daily_digest.digest import build_digest, render_markdown
 from daily_digest.editor import (
     AIM_BODY_WORDS,
@@ -18,13 +18,14 @@ from daily_digest.editor import (
     WriterFailed,
     is_light_day,
     light_aim,
+    render_items,
     revise,
     write_draft,
 )
 from daily_digest.graph import run_digest
 from daily_digest.llm import MeteredClient
 from daily_digest.llm.mock import MockClient
-from daily_digest.publisher import markdown_for, provenance_for
+from daily_digest.publisher import markdown_for, provenance_for, rebuild_index, save_digest
 from daily_digest.reviewer import mechanical_issues, run_review
 from daily_digest.store import Store
 from draft_helpers import make_draft
@@ -92,8 +93,6 @@ def test_revise_uses_the_same_floor_on_a_light_day_and_the_normal_floor_otherwis
 # --- the Reviewer's mechanical layer ---------------------------------------------------
 
 def sent_for(count: int):
-    from daily_digest.editor import render_items
-
     return render_items(items(count))[1]
 
 
@@ -111,14 +110,12 @@ def test_the_reviewer_raises_no_length_issue_for_a_valid_light_day_digest_and_on
 def test_run_review_approves_a_short_digest_on_a_light_day_and_blocks_it_on_a_normal_day():
     light = run_review(make_draft(120), items(4), MockClient([APPROVE]))
     assert light.summary.status == "approved" and light.draft is not None
-    normal = run_review(make_draft(120), items(8), MockClient([APPROVE, make_draft(120), APPROVE, make_draft(120), APPROVE]))
-    assert normal.summary.status != "approved"
-    assert any("they must have 200 to 500" in n for n in normal.notes) or normal.summary.status == "failed"
+    normal = run_review(make_draft(120), items(8), MockClient([APPROVE], max_review_rounds=1))
+    assert normal.summary.status == "failed" and normal.draft is None  # a model "approve" does not hide the length issue
+    assert "could not repair the draft: the sections have 120 words; they must have 200 to 500" in normal.notes
 
 
 def test_the_fallback_uses_the_light_day_floor_too():
-    from daily_digest.contracts import ReviewIssue
-
     flagged = ReviewResult(issues=[ReviewIssue(
         section="what_you_need_to_know", index=1, severity="blocking", category="unsupported", required_change="Cut it.")])
     # removing one 14-word sentence from a 120-word draft leaves 106 words: fine on a light day, short on a normal one
@@ -198,8 +195,6 @@ def test_a_digest_saved_before_the_flag_existed_still_loads():
 
 
 def test_the_index_preview_ignores_the_light_day_line(tmp_path):
-    from daily_digest.publisher import rebuild_index, save_digest
-
     digest = pipeline(4, 120).digest
     published = PublishedDigest(
         digest=digest, provenance=provenance_for(make_draft(120)),

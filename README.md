@@ -76,7 +76,7 @@ After the digest is written, a Reviewer checks each sentence against the sources
 - `review: not converged after 3 round(s); 1 sentence removed` - a blocking issue survived every round, so code removed the flagged sentence and re-checked the rest. The removed sentences are listed as `unresolved` bullets.
 - `review: degraded at 80% of the budget after 1 round(s); 1 sentence removed` - spending reached 80% of the $0.25 cap, so no further model call was started; the same removal was applied to the last draft the Reviewer judged.
 - `review: NOT REVIEWED` - the Reviewer could not run (budget or an error) or you passed `--no-review`. The digest is printed under a banner and must not be published.
-- `review: FAILED ...` - the draft could not be repaired (for example, removing a flagged sentence left it under 200 words, or a blocking issue on the headline survived the last round: the headline cannot be fixed by removing a sentence, so it is never published as written). No digest is printed.
+- `review: FAILED ...` - the draft could not be repaired (for example, removing a flagged sentence left it under the day's minimum length, or a blocking issue on the headline survived the last round: the headline cannot be fixed by removing a sentence, so it is never published as written). No digest is printed.
 
 Exit codes: `0` a reviewed digest (approved, not converged or degraded) or nothing to write; `1` an error or a draft that could not be repaired; `2` a setup problem (no key, bad settings, missing database); `3` the digest was not reviewed. A review adds about 2 to 4 cents per round; most days should approve in one or two rounds.
 
