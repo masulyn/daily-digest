@@ -98,7 +98,7 @@ def aim_range(aim: int) -> str:
     return f"{round(aim * 0.8)} to {round(aim * 1.2)}"
 
 
-LOW_VOLUME_AIM_WORDS_DEFAULT = 100  # the shipped setting; the prompt hashes the evals record are built with it
+LOW_VOLUME_AIM_WORDS_DEFAULT = 100  # the shipped setting
 _COVERAGE = "Give each relevant item one or two sentences. State every fact once; never repeat or restate a fact."
 
 

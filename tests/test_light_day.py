@@ -22,6 +22,7 @@ from daily_digest.editor import (
     render_items,
     revise,
     write_draft,
+    writer_prompt,
 )
 from daily_digest.graph import run_digest
 from daily_digest.llm import MeteredClient
@@ -139,10 +140,15 @@ def test_the_light_day_prompts_give_the_aim_range_and_coverage_wording_and_never
     assert AIM_BODY_WORDS not in LIGHT_SYSTEM_PROMPT and "minimum" not in LIGHT_SYSTEM_PROMPT
 
 
-def test_the_light_day_prompt_follows_the_aim_setting():
-    from daily_digest.editor import writer_prompt
-
+def test_the_light_day_prompt_follows_the_aim_setting_and_never_receives_the_floor():
     assert "aim for 120 to 180 words" in writer_prompt(150)
+    client = MockClient([make_draft(100)], low_volume_min_words=45, low_volume_aim_words=100)
+    write_draft(items(4), client, fit=False)
+    sent = client.requests[0]["system"]
+    assert "80 to 120 words" in sent and not re.search(r"\b45\b", sent)
+    revising = MockClient([make_draft(100)], low_volume_min_words=45, low_volume_aim_words=100)
+    revise(make_draft(100), [], items(4), revising)
+    assert not re.search(r"\b45\b", revising.requests[0]["system"])
 
 
 def test_the_normal_day_prompts_are_unchanged_by_the_light_day_rules():
