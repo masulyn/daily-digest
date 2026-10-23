@@ -72,6 +72,9 @@ class LLMSettings(BaseModel):
     max_run_input_tokens: int = Field(gt=0)
     max_run_output_tokens: int = Field(gt=0)
     max_review_rounds: int = Field(ge=1)
+    # A day with fewer items than this (but at least 3) is a light day and may have a shorter digest.
+    low_volume_max_items: int = Field(ge=1)
+    low_volume_min_words: int = Field(ge=1, lt=200)
     request_timeout_seconds: float = Field(gt=0)
 
     @model_validator(mode="after")

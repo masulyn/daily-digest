@@ -257,7 +257,7 @@ def test_a_canary_in_the_digest_fails_the_case_and_one_that_is_absent_passes(tmp
 def test_results_record_the_config_prompt_hashes_and_rubric_version(tmp_path, monkeypatch):
     results, run_dir = run([small_case()], tmp_path)
     saved = json.loads((run_dir / "results.json").read_text())
-    assert set(saved["prompt_hashes"]) == {"writer", "revise", "review", "judge"} and saved["rubric_version"] == RUBRIC.version
+    assert set(saved["prompt_hashes"]) == {"writer", "revise", "writer_light_day", "revise_light_day", "review", "judge"} and saved["rubric_version"] == RUBRIC.version
     assert saved["config"]["generator_model"] == SETTINGS.model and saved["config"]["judge_model"] == "claude-opus-5-5"
     assert "claude-opus-5-5" in saved["config"]["prices"]
     case = saved["cases"][0]
@@ -343,7 +343,7 @@ def folder_of(results, run_dir, case_id="small"):
 def test_a_writer_that_fails_its_checks_leaves_the_reasons_in_the_folder_results_and_summary(tmp_path):
     results, run_dir = run([small_case()], tmp_path, factory=lambda m: ShortWriter())
     folder, case = folder_of(results, run_dir)
-    assert case.status == "error" and "failed the checks twice" in case.error and "words; they must have 200 to 500" in case.error
+    assert case.status == "error" and "failed the checks twice" in case.error and "words; they must have 100 to 500" in case.error  # five items is a light day
     assert (folder / "failure.txt").read_text() == f"error: {case.error}\n" and case.failure == f"error: {case.error}"
     assert json.loads((run_dir / "results.json").read_text())["cases"][0]["failure"] == case.failure
     summary = (run_dir / "summary.md").read_text()

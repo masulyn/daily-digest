@@ -5,7 +5,9 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field, field_validator
+from pydantic import (
+    AwareDatetime, BaseModel, BeforeValidator, Field, SerializerFunctionWrapHandler, field_validator, model_serializer,
+)
 
 from .domains import normalize_domain
 
@@ -158,6 +160,16 @@ class FinalDigest(BaseModel):
     reading_time_minutes: int
     notes: list[str] = Field(default_factory=list)
     review: ReviewSummary = Field(default_factory=lambda: ReviewSummary(status="unreviewed"))
+    light_day: bool = False  # few items today, so the digest may be shorter than 200 words
+    item_count: int | None = None  # the items the Writer was shown; only set on a light day
+
+    @model_serializer(mode="wrap")
+    def _leave_out_light_day_fields_on_normal_days(self, handler: SerializerFunctionWrapHandler) -> dict:
+        data = handler(self)
+        if not self.light_day:
+            data.pop("light_day", None)
+            data.pop("item_count", None)
+        return data
 
 
 class ProvenanceEntry(BaseModel):

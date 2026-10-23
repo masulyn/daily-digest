@@ -48,6 +48,8 @@ uv run daily-digest draft --no-review        # skip the Reviewer: cheaper, but t
 uv run daily-digest generate [--date YYYY-MM-DD] [--out-dir PATH]   # make yesterday's digest for real: review it, save it, mark its items seen
 ```
 
+On a light day (at least 3 and fewer than 8 items, set by `low_volume_max_items` in `config/settings.toml`) the digest may be as short as 100 words (`low_volume_min_words`) instead of being padded to 200, and it says so with a line under the date: *Light day: 4 items today.* The saved JSON has `light_day` and `item_count`. Fewer than 3 items still gives no digest.
+
 `draft` prints the digest (headline, two sections with `[n]` citations, a numbered Sources list), then any notes, then a usage line (calls, tokens in and out, dollars). The usage line prints on every exit, including errors. An illustrative run (numbers made up):
 
 ```
@@ -74,7 +76,7 @@ After the digest is written, a Reviewer checks each sentence against the sources
 - `review: not converged after 3 round(s); 1 sentence removed` - a blocking issue survived every round, so code removed the flagged sentence and re-checked the rest. The removed sentences are listed as `unresolved` bullets.
 - `review: degraded at 80% of the budget after 1 round(s); 1 sentence removed` - spending reached 80% of the $0.25 cap, so no further model call was started; the same removal was applied to the last draft the Reviewer judged.
 - `review: NOT REVIEWED` - the Reviewer could not run (budget or an error) or you passed `--no-review`. The digest is printed under a banner and must not be published.
-- `review: FAILED ...` - the draft could not be repaired (for example, removing a flagged sentence left it under 200 words, or a blocking issue on the headline survived the last round: the headline cannot be fixed by removing a sentence, so it is never published as written). No digest is printed.
+- `review: FAILED ...` - the draft could not be repaired (for example, removing a flagged sentence left it under the day's minimum length, or a blocking issue on the headline survived the last round: the headline cannot be fixed by removing a sentence, so it is never published as written). No digest is printed.
 
 Exit codes: `0` a reviewed digest (approved, not converged or degraded) or nothing to write; `1` an error or a draft that could not be repaired; `2` a setup problem (no key, bad settings, missing database); `3` the digest was not reviewed. A review adds about 2 to 4 cents per round; most days should approve in one or two rounds.
 

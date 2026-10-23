@@ -10,6 +10,8 @@ max_output_tokens = 6000
 max_run_input_tokens = 150000
 max_run_output_tokens = 20000
 max_review_rounds = 3
+low_volume_max_items = 8   # fewer items than this (and at least 3) is a light day
+low_volume_min_words = 100 # the word floor on a light day; other days keep 200
 request_timeout_seconds = 60
 
 [llm.prices.claude-sonnet-5-5]

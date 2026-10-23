@@ -12,7 +12,9 @@ from pathlib import Path
 from ..config import PROJECT_ROOT, EvalSettings, LLMSettings
 from ..contracts import Draft, ReviewRound
 from ..digest import render_markdown
-from ..editor import REVISE_PROMPT, SYSTEM_PROMPT, WriterFailed, render_items, word_count
+from ..editor import (
+    LIGHT_REVISE_PROMPT, LIGHT_SYSTEM_PROMPT, REVISE_PROMPT, SYSTEM_PROMPT, WriterFailed, render_items, word_count,
+)
 from ..graph import DigestState, run_digest
 from ..llm import LLMClient, LLMError, MeteredClient
 from ..publisher import markdown_for
@@ -37,6 +39,7 @@ def prompt_hashes(rubric: Rubric) -> dict[str, str]:
 
     return {
         "writer": digest(SYSTEM_PROMPT), "revise": digest(REVISE_PROMPT),
+        "writer_light_day": digest(LIGHT_SYSTEM_PROMPT), "revise_light_day": digest(LIGHT_REVISE_PROMPT),
         "review": digest(REVIEW_PROMPT), "judge": digest(judge_system_prompt(rubric)),
     }
 
@@ -210,7 +213,7 @@ def run_eval(
                     for m, p in settings.prices.items()},
             settings={k: str(getattr(settings, k)) for k in (
                 "max_usd_per_run", "max_input_tokens", "max_output_tokens", "max_run_input_tokens",
-                "max_run_output_tokens", "max_review_rounds")},
+                "max_run_output_tokens", "max_review_rounds", "low_volume_max_items", "low_volume_min_words")},
             max_usd_per_eval=str(limit), mock=mock, judge_enabled=judge_enabled, git_dirty=git_dirty,
         ),
         prompt_hashes=prompt_hashes(rubric), rubric_version=rubric.version, cases=results,

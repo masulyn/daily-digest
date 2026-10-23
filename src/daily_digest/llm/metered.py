@@ -60,6 +60,8 @@ class MeteredClient:
         self.max_input_tokens = settings.max_input_tokens
         self.max_output_tokens = settings.max_output_tokens
         self.max_review_rounds = settings.max_review_rounds
+        self.low_volume_max_items = settings.low_volume_max_items
+        self.low_volume_min_words = settings.low_volume_min_words
         self._inner = inner
         self._settings = settings
         self._prices = settings.prices[settings.model]

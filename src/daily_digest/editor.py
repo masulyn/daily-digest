@@ -57,14 +57,15 @@ Refer to items only by their id. Never write a URL and never write citation mark
 the system adds citations itself.
 """
 
-_STYLE_RULES = f"""\
+def _style_rules(floor: int) -> str:
+    return f"""\
 Direct quotes must be `quote` sentences written with double quotation marks “like this”; never use \
 other quotation marks around passages. The headline may use only facts stated in your sentences. \
 Never use the characters < or >; write "under" or "over" instead.
 
 Style: neutral, concise, executive tone for a time-poor C-level reader. No hype, marketing \
 language, emoji, or unexplained acronyms. Short paragraphs. The two sections together are \
-{MIN_BODY_WORDS} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words; \
+{floor} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words; \
 aim for {AIM_HEADLINE_WORDS} and write it about the single most important development, not \
 two stories joined with a semicolon.
 
@@ -90,7 +91,43 @@ otherwise omit it.
 Set starts_paragraph to true on the first sentence of each paragraph.
 """
 
-SYSTEM_PROMPT = f"""\
+
+def light_aim(floor: int) -> str:
+    """The length to ask for on a light day: above the floor, so a dropped sentence cannot go under it."""
+    return f"{floor + floor // 4} to {floor * 2 + floor // 2}"
+
+
+LOW_VOLUME_MIN_WORDS_DEFAULT = 100  # the shipped setting; the prompt hashes the evals record are built with it
+_ONCE = (
+    "State every fact once. Never repeat or restate a fact, and never add filler, to fill space: "
+    "a short digest is expected."
+)
+
+
+def is_light_day(item_count: int, max_items: int) -> bool:
+    """Few items, but enough for a digest. Below MIN_ITEMS there is no digest at all."""
+    return MIN_ITEMS <= item_count < max_items
+
+
+def light_floor(item_count: int, client: BudgetedClient) -> int | None:
+    """The word floor for today if it is a light day, else None (the normal floor applies)."""
+    return client.low_volume_min_words if is_light_day(item_count, client.low_volume_max_items) else None
+
+
+def writer_prompt(floor: int | None = None) -> str:
+    """The Writer's system prompt; `floor` (the light-day word floor) makes it the light-day one."""
+    if floor is None:
+        length = (
+            f"Length: aim for {AIM_BODY_WORDS} words in the two sections, so that a sentence dropped by the "
+            "checks cannot take you under the minimum."
+        )
+    else:
+        length = (
+            f"This is a light day: there are few items, so the digest is short. Length: aim for "
+            f"{light_aim(floor)} words in the two sections, so that a sentence dropped by the checks "
+            f"cannot take you under the minimum. {_ONCE}"
+        )
+    return f"""\
 You are the editor and writer of a daily digest for enterprise AI leaders. You receive the \
 day's news items, choose what is worth including, and write the digest.
 
@@ -100,17 +137,19 @@ Relevance:
 - Medium relevance, use only when the item itself states an enterprise implication: {MEDIUM_TIER}
 - Exclude, skip these: {EXCLUDE_TIER}
 
-Length: aim for {AIM_BODY_WORDS} words in the two sections, so that a sentence dropped by the \
-checks cannot take you under the minimum.
+{length}
 
 Content:
 - "What you need to know" (what_you_need_to_know): 2 to 4 trends or developments.
 - "Worth a closer look" (worth_a_closer_look): 1 to 3 distinctive viewpoints, facts, or quotes, \
 each attributed by name.
 
-{_STYLE_RULES}"""
+{_style_rules(floor or MIN_BODY_WORDS)}"""
 
-REVISE_PROMPT = f"""\
+
+def revise_prompt(floor: int | None = None) -> str:
+    light = "" if floor is None else f"This is a light day, so a short digest is expected. {_ONCE}\n\n"
+    return f"""\
 You are revising a draft of a daily digest for enterprise AI leaders. You receive the previous \
 draft, a list of issues, and the items the draft cited.
 
@@ -119,7 +158,13 @@ Resolve each issue by rewording or removing sentences. Never add a sentence, an 
 that is not already in the draft. Removing a sentence is always acceptable. Return the full \
 revised draft.
 
-{_STYLE_RULES}"""
+{light}{_style_rules(floor or MIN_BODY_WORDS)}"""
+
+
+SYSTEM_PROMPT = writer_prompt()
+REVISE_PROMPT = revise_prompt()
+LIGHT_SYSTEM_PROMPT = writer_prompt(LOW_VOLUME_MIN_WORDS_DEFAULT)
+LIGHT_REVISE_PROMPT = revise_prompt(LOW_VOLUME_MIN_WORDS_DEFAULT)
 
 _TLDS = "com|org|net|io|ai|gov|edu|co|dev|app|info|biz|ly"
 # Schemes and www. in any case; a lowercase host with a known ending; a dotted name that starts with
@@ -321,6 +366,7 @@ def check_draft(
     *,
     max_sentences: tuple[int, int] | None = None,
     section_ids: tuple[set[str], set[str]] | None = None,
+    min_words: int = MIN_BODY_WORDS,
 ) -> Checked:
     """Drop sentences the sent text does not support; list reasons to ask the model again.
 
@@ -361,8 +407,8 @@ def check_draft(
         problems.append("the headline is empty")
     checked = Draft(headline=headline or "(no headline)", **kept)
     words = word_count(checked)
-    if not MIN_BODY_WORDS <= words <= MAX_BODY_WORDS:
-        problems.append(f"the sections have {words} words; they must have {MIN_BODY_WORDS} to {MAX_BODY_WORDS}")
+    if not min_words <= words <= MAX_BODY_WORDS:
+        problems.append(f"the sections have {words} words; they must have {min_words} to {MAX_BODY_WORDS}")
     if max_sentences and (
         len(draft.what_you_need_to_know) > max_sentences[0]
         or len(draft.worth_a_closer_look) > max_sentences[1]
@@ -385,6 +431,7 @@ def _generate(
     sent: dict[str, SentItem],
     max_sentences: tuple[int, int] | None = None,
     section_ids: tuple[set[str], set[str]] | None = None,
+    min_words: int = MIN_BODY_WORDS,
 ) -> tuple[Draft, list[str]]:
     """Ask, check, and ask once more with the problems appended; then give up."""
     earlier: list[str] = []  # what the failed first draft dropped, so a retry does not hide it
@@ -398,7 +445,9 @@ def _generate(
             problems, notes, dropped = [f"the reply did not match the format: {str(error)[:500]}"], [], []
             reply = error.raw_text
         else:
-            checked = check_draft(result.parsed, sent, max_sentences=max_sentences, section_ids=section_ids)
+            checked = check_draft(
+                result.parsed, sent, max_sentences=max_sentences, section_ids=section_ids, min_words=min_words
+            )
             if not checked.problems:
                 return checked.draft, [*earlier, *checked.notes]
             problems, notes, dropped = checked.problems, checked.notes, checked.dropped
@@ -423,10 +472,11 @@ def fit_items(items: list[CandidateItem], client: BudgetedClient) -> tuple[list[
     first, the only ranking available, and keeps its order.
     """
     budget = client.max_input_tokens - client.max_output_tokens
+    longest_prompt = max(SYSTEM_PROMPT, LIGHT_SYSTEM_PROMPT, key=len)  # the light-day prompt is a little longer
 
     def too_big(current: list[CandidateItem]) -> bool:
         prompt, _ = render_items(current)
-        return estimate_input_tokens(SYSTEM_PROMPT, [{"content": prompt}], Draft) > budget
+        return estimate_input_tokens(longest_prompt, [{"content": prompt}], Draft) > budget
 
     fitted, degraded, dropped = list(items), 0, 0
     while fitted and too_big(fitted):
@@ -456,7 +506,10 @@ def write_draft(
     if len(items) < MIN_ITEMS:
         raise WriterFailed(f"fewer than {MIN_ITEMS} items fit within the input limit")
     prompt, sent = render_items(items)
-    draft, notes = _generate(client, SYSTEM_PROMPT, [{"role": "user", "content": prompt}], sent)
+    floor = light_floor(len(items), client)
+    draft, notes = _generate(
+        client, writer_prompt(floor), [{"role": "user", "content": prompt}], sent, min_words=floor or MIN_BODY_WORDS
+    )
     return draft, [*fit_notes, *notes]
 
 
@@ -467,7 +520,8 @@ def revise(
 
     Mechanical checks keep a revision from adding sentences or citing new items. They cannot tell
     whether rewording changed what a sentence claims; the Reviewer's entailment check does that.
-    The 200 to 500 word rule applies here too, so removing too much fails the length check.
+    The word-count rule (200 to 500, or the light-day floor to 500) applies here too, so removing too much
+    fails the length check.
     Pass the items `write_draft` sent: it may have shortened some, and quotes are checked against
     the text the model was shown.
     """
@@ -491,4 +545,8 @@ def revise(
         {i for s in draft.what_you_need_to_know for i in s.item_ids},
         {i for s in draft.worth_a_closer_look for i in s.item_ids},
     )
-    return _generate(client, REVISE_PROMPT, [{"role": "user", "content": prompt}], sent, limits, cited_by_section)
+    floor = light_floor(len(items), client)
+    return _generate(
+        client, revise_prompt(floor), [{"role": "user", "content": prompt}], sent, limits, cited_by_section,
+        min_words=floor or MIN_BODY_WORDS,
+    )

@@ -76,6 +76,8 @@ class BudgetedClient(LLMClient, Protocol):
     max_input_tokens: int
     max_output_tokens: int
     max_review_rounds: int
+    low_volume_max_items: int
+    low_volume_min_words: int
     spent: Decimal
 
     def degraded(self) -> bool:
