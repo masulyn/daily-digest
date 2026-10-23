@@ -20,7 +20,9 @@ from .contracts import (
     ReviewSummary,
     SectionName,
 )
-from .editor import SentItem, WriterFailed, check_draft, clip, escape, has_url, render_items, revise
+from .editor import (
+    MIN_BODY_WORDS, SentItem, WriterFailed, check_draft, clip, escape, has_url, light_floor, render_items, revise,
+)
 from .llm import BudgetedClient, BudgetExceeded, LLMError, OutputInvalidError
 from .llm.metered import format_usd
 
@@ -102,9 +104,14 @@ def _category_for(reason: str) -> str:
     return "unsupported"
 
 
-def mechanical_issues(draft: Draft, sent: dict[str, SentItem]) -> list[ReviewIssue]:
-    """Blocking issues found by code alone: the Writer's checks run again, plus the no-opinion scan."""
-    checked = check_draft(draft, sent)
+def mechanical_issues(
+    draft: Draft, sent: dict[str, SentItem], min_words: int = MIN_BODY_WORDS
+) -> list[ReviewIssue]:
+    """Blocking issues found by code alone: the Writer's checks run again, plus the no-opinion scan.
+
+    `min_words` is the Writer's floor for the day, so a valid light-day digest is not called too short.
+    """
+    checked = check_draft(draft, sent, min_words=min_words)
     issues = [
         ReviewIssue(
             section=section, index=index, severity="blocking", category=_category_for(reason),
@@ -239,14 +246,15 @@ def _headline_blockers(issues: list[ReviewIssue]) -> list[ReviewIssue]:
 
 
 def _fallback(
-    draft: Draft, issues: list[ReviewIssue], sent: dict[str, SentItem], status: str, rounds: int, notes: list[str]
+    draft: Draft, issues: list[ReviewIssue], sent: dict[str, SentItem], status: str, rounds: int, notes: list[str],
+    min_words: int,
 ) -> ReviewOutcome:
     """Remove flagged sentences in code and re-check; no model call."""
     blocking = [i for i in issues if i.severity == "blocking"]
     unresolved = [_issue_text(draft, i) for i in blocking]
     advisory = [_issue_text(draft, i) for i in issues if i.severity == "advisory"]
     pruned, removed = _prune(draft, issues)
-    checked = check_draft(pruned, sent)
+    checked = check_draft(pruned, sent, min_words=min_words)
     headline_covered = any("headline" in p for p in checked.problems)  # a mechanical headline issue
     problems = [
         *(
@@ -275,6 +283,7 @@ def run_review(
     if not enabled:
         return ReviewOutcome(draft, ReviewSummary(status="unreviewed"), [])
     _, sent = render_items(sent_items)
+    min_words = light_floor(len(sent_items), client) or MIN_BODY_WORDS
     notes: list[str] = []
     current, rounds = draft, 0
     history: list[ReviewRound] = []
@@ -284,7 +293,7 @@ def run_review(
         if client.degraded():
             stop = "budget"
             break
-        mechanical = mechanical_issues(current, sent)
+        mechanical = mechanical_issues(current, sent, min_words)
         try:
             model_issues, review_notes = review_draft(current, sent_items, client)
         except BudgetExceeded:
@@ -331,4 +340,4 @@ def run_review(
         return ReviewOutcome(draft, ReviewSummary(status="unreviewed"), notes)
     last_draft, last_issues = reviewed
     status = "degraded" if stop == "budget" else "not_converged"
-    return replace(_fallback(last_draft, last_issues, sent, status, rounds, notes), rounds=history)
+    return replace(_fallback(last_draft, last_issues, sent, status, rounds, notes, min_words), rounds=history)

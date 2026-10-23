@@ -16,7 +16,7 @@ from pydantic import AwareDatetime, BaseModel
 from .contracts import CandidateItem, Draft, FinalDigest, ItemSummary, ReviewRound, ReviewSummary
 from .digest import build_digest
 from .domains import item_link_allowed
-from .editor import MIN_ITEMS, fit_items, hidden_text_note, write_draft
+from .editor import MIN_ITEMS, fit_items, hidden_text_note, is_light_day, write_draft
 from .llm import BudgetedClient
 from .reviewer import run_review
 from .store import Store
@@ -102,6 +102,7 @@ def review(state: DigestState, client: BudgetedClient, enabled: bool) -> dict:
     digest = build_digest(
         outcome.draft, state.sent_items, state.target_date, state.generated_at,
         [*state.notes, *outcome.notes], outcome.summary,
+        light_day=is_light_day(len(state.sent_items), client.low_volume_max_items),
     )
     return {
         "draft": outcome.draft, "digest": digest, "review": outcome.summary,

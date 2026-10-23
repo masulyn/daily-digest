@@ -48,6 +48,8 @@ uv run daily-digest draft --no-review        # skip the Reviewer: cheaper, but t
 uv run daily-digest generate [--date YYYY-MM-DD] [--out-dir PATH]   # make yesterday's digest for real: review it, save it, mark its items seen
 ```
 
+On a light day (at least 3 and fewer than 8 items, set by `low_volume_max_items` in `config/settings.toml`) the digest may be as short as 100 words (`low_volume_min_words`) instead of being padded to 200, and it says so with a line under the date: *Light day: 4 items today.* The saved JSON has `light_day` and `item_count`. Fewer than 3 items still gives no digest.
+
 `draft` prints the digest (headline, two sections with `[n]` citations, a numbered Sources list), then any notes, then a usage line (calls, tokens in and out, dollars). The usage line prints on every exit, including errors. An illustrative run (numbers made up):
 
 ```

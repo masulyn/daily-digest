@@ -51,6 +51,8 @@ def build_digest(
     generated_at: datetime,
     notes: list[str],
     review: ReviewSummary | None = None,
+    *,
+    light_day: bool = False,
 ) -> FinalDigest:
     """Markers are numbered by first appearance; Sources lists exactly the items that got a marker."""
     by_id = {item.id: item for item in items}
@@ -78,6 +80,8 @@ def build_digest(
         reading_time_minutes=max(1, math.ceil(words / WORDS_PER_MINUTE)),
         notes=notes,
         review=review or ReviewSummary(status="unreviewed"),
+        light_day=light_day,
+        item_count=len(items) if light_day else None,
     )
 
 
@@ -117,6 +121,7 @@ def render_markdown(digest: FinalDigest) -> str:
         f"Covered {digest.covered_date.isoformat()} · generated {generated} · "
         f"{digest.reading_time_minutes} min read",
         "",
+        *([f"*Light day: {digest.item_count} items today.*", ""] if digest.light_day else []),
         "## What you need to know",
         "",
         *[line for paragraph in digest.what_you_need_to_know for line in (paragraph, "")],

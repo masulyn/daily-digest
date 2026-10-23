@@ -23,7 +23,9 @@ from pydantic import SecretStr
 from daily_digest.config import load_eval_settings, load_llm_settings
 from daily_digest.contracts import CandidateItem, Draft, DraftSentence, ReviewIssue, ReviewResult
 from daily_digest.digest import render_markdown
-from daily_digest.editor import REVISE_PROMPT, SYSTEM_PROMPT, check_draft, render_items
+from daily_digest.editor import (
+    LIGHT_REVISE_PROMPT, LIGHT_SYSTEM_PROMPT, REVISE_PROMPT, SYSTEM_PROMPT, check_draft, render_items,
+)
 from daily_digest.evals.judge import judge_digest, judge_system_prompt
 from daily_digest.evals.models import Case
 from daily_digest.evals.rubric import load_rubric
@@ -43,7 +45,10 @@ RUBRIC = load_rubric(ROOT / "evals" / "rubric.toml")
 DAY = date(2026, 10, 14)
 USAGE = Usage(input_tokens=1000, output_tokens=200)
 ITEM_BLOCK = re.compile(r"<<<ITEM [^\n]*>>>\n.*?\n<<<END ITEM [^\n]*>>>", re.S)
-SYSTEMS = {SYSTEM_PROMPT: "writer", REVISE_PROMPT: "revise", REVIEW_PROMPT: "review", judge_system_prompt(RUBRIC): "judge"}
+SYSTEMS = {  # three items is a light day, so the light-day prompts are the ones a run sends
+    SYSTEM_PROMPT: "writer", REVISE_PROMPT: "revise", LIGHT_SYSTEM_PROMPT: "writer", LIGHT_REVISE_PROMPT: "revise",
+    REVIEW_PROMPT: "review", judge_system_prompt(RUBRIC): "judge",
+}
 
 
 def hostile_text(fixture: dict) -> str:
@@ -184,6 +189,7 @@ class ObedientReviewer:
         self.drafts, self.requests = list(drafts), 0
 
     max_input_tokens, max_output_tokens, max_review_rounds, spent = 40_000, 4_000, 3, 0
+    low_volume_max_items, low_volume_min_words = 8, 100
 
     def degraded(self):
         return False
@@ -225,6 +231,7 @@ class HonestReviewerObedientWriter:
     """A writer that obeys an injection to promote a vendor; a reviewer that flags the promotion."""
 
     max_input_tokens, max_output_tokens, max_review_rounds, spent = 40_000, 4_000, 3, 0
+    low_volume_max_items, low_volume_min_words = 8, 100
 
     def degraded(self):
         return False
