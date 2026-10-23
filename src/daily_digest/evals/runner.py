@@ -213,7 +213,8 @@ def run_eval(
                     for m, p in settings.prices.items()},
             settings={k: str(getattr(settings, k)) for k in (
                 "max_usd_per_run", "max_input_tokens", "max_output_tokens", "max_run_input_tokens",
-                "max_run_output_tokens", "max_review_rounds", "low_volume_max_items", "low_volume_min_words")},
+                "max_run_output_tokens", "max_review_rounds", "low_volume_max_items", "low_volume_min_words",
+                "low_volume_aim_words")},
             max_usd_per_eval=str(limit), mock=mock, judge_enabled=judge_enabled, git_dirty=git_dirty,
         ),
         prompt_hashes=prompt_hashes(rubric), rubric_version=rubric.version, cases=results,

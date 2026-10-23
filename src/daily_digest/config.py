@@ -74,13 +74,20 @@ class LLMSettings(BaseModel):
     max_review_rounds: int = Field(ge=1)
     # A day with fewer items than this (but at least 3) is a light day and may have a shorter digest.
     low_volume_max_items: int = Field(ge=1)
-    low_volume_min_words: int = Field(ge=1, lt=200)
+    low_volume_min_words: int = Field(ge=1, lt=200)  # a hard minimum
+    low_volume_aim_words: int = Field(ge=1, lt=200)  # what the prompt asks for; at least the minimum
     request_timeout_seconds: float = Field(gt=0)
 
     @model_validator(mode="after")
     def _model_has_a_price(self) -> "LLMSettings":
         if self.model not in self.prices:
             raise ValueError(f"no entry for model {self.model!r} in llm.prices")
+        return self
+
+    @model_validator(mode="after")
+    def _aim_is_not_below_the_minimum(self) -> "LLMSettings":
+        if self.low_volume_aim_words < self.low_volume_min_words:
+            raise ValueError("llm.low_volume_aim_words must be at least llm.low_volume_min_words")
         return self
 
     @model_validator(mode="after")
