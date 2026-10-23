@@ -63,3 +63,66 @@ Daily Digest reads text written by strangers (feeds and article pages), shows it
 | FR-9.8 citation fabrication | `tests/test_editor.py` (unknown ids, URLs), `tests/test_generate.py` (Sources must come from the day's items and their feed's domains) | |
 | FR-9.9 grounding and no opinion | `tests/test_editor.py`, `tests/test_reviewer.py`, `tests/test_injection.py` | |
 | FR-9.10 generate endpoint | Not covered: there is no web interface in v1. | |
+
+## Your API key
+
+The app reads the key only from the `ANTHROPIC_API_KEY` environment variable and never stores, prints or logs it. Create a dedicated key with its own spend limit, and keep it out of your shell history.
+
+### 1. Create a key
+
+1. Sign in to the [Claude Console](https://platform.claude.com/) and open the [API keys](https://platform.claude.com/settings/keys) page.
+2. Click **Create key**, name it, and choose an expiration. Use a personal key for your own development.
+3. Copy the key (it starts with `sk-ant-`). The Console shows it only once.
+
+### 2. Set a spend limit as a second backstop
+
+The app's cap stops a single run; a Console spend limit stops everything else. Limits cannot be set on the Default Workspace, so make a dedicated one.
+
+1. On the [Workspaces](https://platform.claude.com/settings/workspaces) page, create a workspace (for example `daily-digest`) and create the key in step 1 scoped to it.
+2. Select the workspace, click **Spend limits**, and set a monthly cap.
+
+### 3. Keep the key out of your shell
+
+Do not `export` the key in your shell profile or type it into a command that lands in shell history.
+
+On macOS, store it once in the login keychain. With `-w` last and no value, `security` prompts for it, so it never enters shell history:
+
+```
+security add-generic-password -a "$USER" -s daily-digest-anthropic -w
+```
+
+Then read it for a single run, so it exists only in that process:
+
+```
+ANTHROPIC_API_KEY=$(security find-generic-password -a "$USER" -s daily-digest-anthropic -w) uv run daily-digest draft
+```
+
+To remove it: `security delete-generic-password -a "$USER" -s daily-digest-anthropic`.
+
+Without a key, `draft` exits with a one-line error; `draft --stub` needs none.
+
+## Secret scanning
+
+CI runs [Gitleaks](https://github.com/gitleaks/gitleaks) on the commits of every push to `main` and every pull request, and fails the build on a finding. A feature branch is covered once its PR is open. The job downloads a pinned release binary and checks it against a pinned sha256 taken from the release's published checksums file. It has read-only permissions, and CI uses no secrets or tokens at all (the tests use the mock LLM provider).
+
+To scan locally on macOS, download the same release with `curl` (unlike a browser, it does not trigger Gatekeeper quarantine), check its sha256 (the command fails if it differs), and run the binary from where you extracted it. Use `arm64` on Apple silicon and `x64` on Intel:
+
+```
+V=8.30.1; ARCH=arm64   # or x64
+case $ARCH in
+  arm64) SUM=b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 ;;
+  x64)   SUM=dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709 ;;
+esac
+curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_darwin_$ARCH.tar.gz"
+echo "$SUM  gitleaks.tar.gz" | shasum -a 256 -c -   # stops here if the hash differs
+mkdir -p ~/bin/gitleaks-$V && tar -xzf gitleaks.tar.gz -C ~/bin/gitleaks-$V gitleaks
+```
+
+Then scan the whole history of every branch from the repo root. `--redact` keeps any secret out of the output:
+
+```
+V=8.30.1   # same version as above; set it again in a new terminal
+~/bin/gitleaks-$V/gitleaks git --log-opts="--all" --redact .
+```
+
+The exit code is 1 when something is found and 0 when clean. To scan only what your branch adds, use `--log-opts="origin/main..HEAD"`. If you downloaded the archive in a browser instead, macOS may refuse to run it; `xattr -d com.apple.quarantine gitleaks` on the extracted binary fixes that.

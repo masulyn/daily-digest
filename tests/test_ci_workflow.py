@@ -54,8 +54,8 @@ def test_no_secrets_anywhere():
     assert "env:" not in _jobs()["test"]
 
 
-def test_readme_gitleaks_version_matches_workflow():
-    readme = (ROOT / "README.md").read_text()
-    section = readme.split("## Secret scanning", 1)[1]
+def test_security_notes_gitleaks_version_matches_workflow():
+    notes = (ROOT / "docs" / "SECURITY.md").read_text()
+    section = notes.split("## Secret scanning", 1)[1]
     versions = set(re.findall(r"\d+\.\d+\.\d+", section))
     assert versions == {_workflow_version()}
