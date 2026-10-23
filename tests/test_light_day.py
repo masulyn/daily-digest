@@ -1,6 +1,7 @@
 """Light days: with few items the digest may be shorter than 200 words, flagged, instead of padded."""
 
 import json
+import re
 from datetime import date, datetime, timezone
 
 import pytest
@@ -17,10 +18,11 @@ from daily_digest.editor import (
     SYSTEM_PROMPT,
     WriterFailed,
     is_light_day,
-    light_aim,
+    aim_range,
     render_items,
     revise,
     write_draft,
+    writer_prompt,
 )
 from daily_digest.graph import run_digest
 from daily_digest.llm import MeteredClient
@@ -54,10 +56,10 @@ def test_a_day_is_light_with_at_least_three_and_fewer_than_the_setting(count, li
 
 # --- the Writer's word floor -----------------------------------------------------------
 
-def test_a_day_with_four_items_accepts_100_words_and_rejects_99():
-    assert written(4, 100)
-    with pytest.raises(WriterFailed, match="the sections have 99 words; they must have 100 to 500"):
-        written(4, 99)
+def test_a_day_with_four_items_accepts_50_words_and_rejects_49():
+    assert written(4, 50)
+    with pytest.raises(WriterFailed, match="the sections have 49 words; they must have 50 to 500"):
+        written(4, 49)
 
 
 def test_a_day_with_eight_items_still_needs_200_words():
@@ -76,16 +78,17 @@ def test_500_words_is_the_ceiling_on_every_day(count):
 
 
 def test_the_floor_follows_the_setting():
-    client = MockClient([make_draft(60)], low_volume_min_words=50)
-    assert write_draft(items(4), client, fit=False)[0]
+    assert write_draft(items(4), MockClient([make_draft(45)], low_volume_min_words=45), fit=False)[0]
+    with pytest.raises(WriterFailed, match="44 words; they must have 45 to 500"):
+        write_draft(items(4), MockClient([make_draft(44)] * 2, low_volume_min_words=45), fit=False)
 
 
 def test_revise_uses_the_same_floor_on_a_light_day_and_the_normal_floor_otherwise():
     first = make_draft(300)
     issue = []
-    assert revise(first, issue, items(4), MockClient([make_draft(100)]))
-    with pytest.raises(WriterFailed, match="99 words; they must have 100 to 500"):
-        revise(first, issue, items(4), MockClient([make_draft(99), make_draft(99)]))
+    assert revise(first, issue, items(4), MockClient([make_draft(50)]))
+    with pytest.raises(WriterFailed, match="49 words; they must have 50 to 500"):
+        revise(first, issue, items(4), MockClient([make_draft(49), make_draft(49)]))
     with pytest.raises(WriterFailed, match="150 words; they must have 200 to 500"):
         revise(first, issue, items(8), MockClient([make_draft(150), make_draft(150)]))
 
@@ -101,9 +104,9 @@ def length_issues(draft, count, floor):
 
 
 def test_the_reviewer_raises_no_length_issue_for_a_valid_light_day_digest_and_one_below_the_floor():
-    assert length_issues(make_draft(100), 4, 100) == []
-    below = length_issues(make_draft(99), 4, 100)
-    assert len(below) == 1 and below[0].section == "headline" and "they must have 100 to 500" in below[0].required_change
+    assert length_issues(make_draft(50), 4, 50) == []
+    below = length_issues(make_draft(49), 4, 50)
+    assert len(below) == 1 and below[0].section == "headline" and "they must have 50 to 500" in below[0].required_change
     assert length_issues(make_draft(150), 8, 200)  # a normal day is still held to 200
 
 
@@ -127,12 +130,25 @@ def test_the_fallback_uses_the_light_day_floor_too():
 
 # --- prompts ---------------------------------------------------------------------------
 
-def test_the_light_day_prompts_give_a_lower_aim_and_the_state_each_fact_once_rule():
+def test_the_light_day_prompts_give_the_aim_range_and_coverage_wording_and_never_the_floor():
     for prompt in (LIGHT_SYSTEM_PROMPT, LIGHT_REVISE_PROMPT):
-        assert "light day" in prompt and "State every fact once." in prompt and "to fill space" in prompt
-        assert "The two sections together are 100 to 500 words" in prompt
-    assert light_aim(100) == "125 to 250" and f"aim for {light_aim(100)} words" in LIGHT_SYSTEM_PROMPT
-    assert AIM_BODY_WORDS not in LIGHT_SYSTEM_PROMPT
+        assert "light day" in prompt and "80 to 120 words" in prompt
+        assert "Give each relevant item one or two sentences. State every fact once; never repeat or restate a fact." in prompt
+        assert "at most 500 words" in prompt and not re.search(r"\b50\b", prompt)  # the floor must not become the target
+        assert "short digest is expected" not in prompt and "filler" not in prompt
+    assert aim_range(100) == "80 to 120" and aim_range(60) == "48 to 72"
+    assert AIM_BODY_WORDS not in LIGHT_SYSTEM_PROMPT and "minimum" not in LIGHT_SYSTEM_PROMPT
+
+
+def test_the_light_day_prompt_follows_the_aim_setting_and_never_receives_the_floor():
+    assert "aim for 120 to 180 words" in writer_prompt(150)
+    client = MockClient([make_draft(100)], low_volume_min_words=45, low_volume_aim_words=100)
+    write_draft(items(4), client, fit=False)
+    sent = client.requests[0]["system"]
+    assert "80 to 120 words" in sent and not re.search(r"\b45\b", sent)
+    revising = MockClient([make_draft(100)], low_volume_min_words=45, low_volume_aim_words=100)
+    revise(make_draft(100), [], items(4), revising)
+    assert not re.search(r"\b45\b", revising.requests[0]["system"])
 
 
 def test_the_normal_day_prompts_are_unchanged_by_the_light_day_rules():
@@ -209,4 +225,4 @@ def test_the_index_preview_ignores_the_light_day_line(tmp_path):
 def test_the_real_settings_have_the_documented_defaults_and_reach_the_client():
     settings = load_llm_settings()
     client = MeteredClient(MockClient([]), settings)
-    assert (client.low_volume_max_items, client.low_volume_min_words) == (8, 100)
+    assert (client.low_volume_max_items, client.low_volume_min_words, client.low_volume_aim_words) == (8, 50, 100)

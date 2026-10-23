@@ -62,6 +62,7 @@ class MeteredClient:
         self.max_review_rounds = settings.max_review_rounds
         self.low_volume_max_items = settings.low_volume_max_items
         self.low_volume_min_words = settings.low_volume_min_words
+        self.low_volume_aim_words = settings.low_volume_aim_words
         self._inner = inner
         self._settings = settings
         self._prices = settings.prices[settings.model]

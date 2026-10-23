@@ -17,7 +17,8 @@ class MockClient:
         max_output_tokens: int = 4000,
         max_review_rounds: int = 3,
         low_volume_max_items: int = 8,
-        low_volume_min_words: int = 100,
+        low_volume_min_words: int = 50,
+        low_volume_aim_words: int = 100,
     ) -> None:
         self._responses = list(responses)
         self._usage = usage
@@ -26,6 +27,7 @@ class MockClient:
         self.max_review_rounds = max_review_rounds
         self.low_volume_max_items = low_volume_max_items
         self.low_volume_min_words = low_volume_min_words
+        self.low_volume_aim_words = low_volume_aim_words
         self.spent = Decimal(0)
         self.requests: list[dict] = []
 

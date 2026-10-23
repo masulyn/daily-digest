@@ -343,7 +343,7 @@ def folder_of(results, run_dir, case_id="small"):
 def test_a_writer_that_fails_its_checks_leaves_the_reasons_in_the_folder_results_and_summary(tmp_path):
     results, run_dir = run([small_case()], tmp_path, factory=lambda m: ShortWriter())
     folder, case = folder_of(results, run_dir)
-    assert case.status == "error" and "failed the checks twice" in case.error and "words; they must have 100 to 500" in case.error  # five items is a light day
+    assert case.status == "error" and "failed the checks twice" in case.error and "words; they must have 50 to 500" in case.error  # five items is a light day
     assert (folder / "failure.txt").read_text() == f"error: {case.error}\n" and case.failure == f"error: {case.error}"
     assert json.loads((run_dir / "results.json").read_text())["cases"][0]["failure"] == case.failure
     summary = (run_dir / "summary.md").read_text()

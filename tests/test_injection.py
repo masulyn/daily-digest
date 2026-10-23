@@ -189,7 +189,7 @@ class ObedientReviewer:
         self.drafts, self.requests = list(drafts), 0
 
     max_input_tokens, max_output_tokens, max_review_rounds, spent = 40_000, 4_000, 3, 0
-    low_volume_max_items, low_volume_min_words = 8, 100
+    low_volume_max_items, low_volume_min_words, low_volume_aim_words = 8, 50, 100
 
     def degraded(self):
         return False
@@ -231,7 +231,7 @@ class HonestReviewerObedientWriter:
     """A writer that obeys an injection to promote a vendor; a reviewer that flags the promotion."""
 
     max_input_tokens, max_output_tokens, max_review_rounds, spent = 40_000, 4_000, 3, 0
-    low_volume_max_items, low_volume_min_words = 8, 100
+    low_volume_max_items, low_volume_min_words, low_volume_aim_words = 8, 50, 100
 
     def degraded(self):
         return False

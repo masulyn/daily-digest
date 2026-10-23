@@ -57,7 +57,8 @@ Refer to items only by their id. Never write a URL and never write citation mark
 the system adds citations itself.
 """
 
-def _style_rules(floor: int) -> str:
+def _style_rules(light: bool) -> str:
+    length = f"at most {MAX_BODY_WORDS}" if light else f"{MIN_BODY_WORDS} to {MAX_BODY_WORDS}"
     return f"""\
 Direct quotes must be `quote` sentences written with double quotation marks “like this”; never use \
 other quotation marks around passages. The headline may use only facts stated in your sentences. \
@@ -65,7 +66,7 @@ Never use the characters < or >; write "under" or "over" instead.
 
 Style: neutral, concise, executive tone for a time-poor C-level reader. No hype, marketing \
 language, emoji, or unexplained acronyms. Short paragraphs. The two sections together are \
-{floor} to {MAX_BODY_WORDS} words. The headline is at most {MAX_HEADLINE_WORDS} words; \
+{length} words. The headline is at most {MAX_HEADLINE_WORDS} words; \
 aim for {AIM_HEADLINE_WORDS} and write it about the single most important development, not \
 two stories joined with a semicolon.
 
@@ -92,16 +93,13 @@ Set starts_paragraph to true on the first sentence of each paragraph.
 """
 
 
-def light_aim(floor: int) -> str:
-    """The length to ask for on a light day: above the floor, so a dropped sentence cannot go under it."""
-    return f"{floor + floor // 4} to {floor * 2 + floor // 2}"
+def aim_range(aim: int) -> str:
+    """What a light-day prompt asks for: 80 to 120 percent of the aim. The floor is never named in it."""
+    return f"{round(aim * 0.8)} to {round(aim * 1.2)}"
 
 
-LOW_VOLUME_MIN_WORDS_DEFAULT = 100  # the shipped setting; the prompt hashes the evals record are built with it
-_ONCE = (
-    "State every fact once. Never repeat or restate a fact, and never add filler, to fill space: "
-    "a short digest is expected."
-)
+LOW_VOLUME_AIM_WORDS_DEFAULT = 100  # the shipped setting
+_COVERAGE = "Give each relevant item one or two sentences. State every fact once; never repeat or restate a fact."
 
 
 def is_light_day(item_count: int, max_items: int) -> bool:
@@ -114,18 +112,22 @@ def light_floor(item_count: int, client: BudgetedClient) -> int | None:
     return client.low_volume_min_words if is_light_day(item_count, client.low_volume_max_items) else None
 
 
-def writer_prompt(floor: int | None = None) -> str:
-    """The Writer's system prompt; `floor` (the light-day word floor) makes it the light-day one."""
-    if floor is None:
+def light_aim_words(item_count: int, client: BudgetedClient) -> int | None:
+    """The word count to aim for today if it is a light day, else None."""
+    return client.low_volume_aim_words if is_light_day(item_count, client.low_volume_max_items) else None
+
+
+def writer_prompt(aim: int | None = None) -> str:
+    """The Writer's system prompt; `aim` (the light-day length to aim for) makes it the light-day one."""
+    if aim is None:
         length = (
             f"Length: aim for {AIM_BODY_WORDS} words in the two sections, so that a sentence dropped by the "
             "checks cannot take you under the minimum."
         )
     else:
         length = (
-            f"This is a light day: there are few items, so the digest is short. Length: aim for "
-            f"{light_aim(floor)} words in the two sections, so that a sentence dropped by the checks "
-            f"cannot take you under the minimum. {_ONCE}"
+            f"This is a light day: there are few items. Length: aim for {aim_range(aim)} words in the two "
+            f"sections. {_COVERAGE}"
         )
     return f"""\
 You are the editor and writer of a daily digest for enterprise AI leaders. You receive the \
@@ -144,11 +146,14 @@ Content:
 - "Worth a closer look" (worth_a_closer_look): 1 to 3 distinctive viewpoints, facts, or quotes, \
 each attributed by name.
 
-{_style_rules(floor or MIN_BODY_WORDS)}"""
+{_style_rules(aim is not None)}"""
 
 
-def revise_prompt(floor: int | None = None) -> str:
-    light = "" if floor is None else f"This is a light day, so a short digest is expected. {_ONCE}\n\n"
+def revise_prompt(aim: int | None = None) -> str:
+    light = (
+        "" if aim is None
+        else f"This is a light day: keep the draft near {aim_range(aim)} words. {_COVERAGE}\n\n"
+    )
     return f"""\
 You are revising a draft of a daily digest for enterprise AI leaders. You receive the previous \
 draft, a list of issues, and the items the draft cited.
@@ -158,13 +163,13 @@ Resolve each issue by rewording or removing sentences. Never add a sentence, an 
 that is not already in the draft. Removing a sentence is always acceptable. Return the full \
 revised draft.
 
-{light}{_style_rules(floor or MIN_BODY_WORDS)}"""
+{light}{_style_rules(aim is not None)}"""
 
 
 SYSTEM_PROMPT = writer_prompt()
 REVISE_PROMPT = revise_prompt()
-LIGHT_SYSTEM_PROMPT = writer_prompt(LOW_VOLUME_MIN_WORDS_DEFAULT)
-LIGHT_REVISE_PROMPT = revise_prompt(LOW_VOLUME_MIN_WORDS_DEFAULT)
+LIGHT_SYSTEM_PROMPT = writer_prompt(LOW_VOLUME_AIM_WORDS_DEFAULT)
+LIGHT_REVISE_PROMPT = revise_prompt(LOW_VOLUME_AIM_WORDS_DEFAULT)
 
 _TLDS = "com|org|net|io|ai|gov|edu|co|dev|app|info|biz|ly"
 # Schemes and www. in any case; a lowercase host with a known ending; a dotted name that starts with
@@ -508,7 +513,8 @@ def write_draft(
     prompt, sent = render_items(items)
     floor = light_floor(len(items), client)
     draft, notes = _generate(
-        client, writer_prompt(floor), [{"role": "user", "content": prompt}], sent, min_words=floor or MIN_BODY_WORDS
+        client, writer_prompt(light_aim_words(len(items), client)), [{"role": "user", "content": prompt}], sent,
+        min_words=floor or MIN_BODY_WORDS,
     )
     return draft, [*fit_notes, *notes]
 
@@ -547,6 +553,7 @@ def revise(
     )
     floor = light_floor(len(items), client)
     return _generate(
-        client, revise_prompt(floor), [{"role": "user", "content": prompt}], sent, limits, cited_by_section,
+        client, revise_prompt(light_aim_words(len(items), client)), [{"role": "user", "content": prompt}], sent, limits,
+        cited_by_section,
         min_words=floor or MIN_BODY_WORDS,
     )
