@@ -412,7 +412,7 @@ def check_draft(
             problems.append(f"{name} has no valid sentences")
 
     headline = _plain(draft.headline)
-    problems += headline_problems(headline, sent)
+    problems += headline_problems(draft.headline, sent)
     checked = Draft(headline=headline or "(no headline)", **kept)
     words = word_count(checked)
     if not min_words <= words <= MAX_BODY_WORDS:
@@ -426,7 +426,8 @@ def check_draft(
 
 
 def headline_problems(headline: str, sent: dict[str, SentItem]) -> list[str]:
-    """The mechanical headline checks, in fixed wording. `headline` is already plain text."""
+    """The mechanical headline checks, in fixed wording."""
+    headline = _plain(headline)
     problems = []
     if has_url(headline) or _MARKER.search(headline):
         problems.append("the headline contains a URL or a citation marker")
@@ -587,12 +588,14 @@ def rewrite_headline(
     """
     cited = list(dict.fromkeys(i for sentence in sentences(draft) for i in sentence.item_ids))
     by_id = {item.id: item for item in items}
-    blocks, _ = render_items([by_id[i] for i in cited if i in by_id])
-    body = Draft(headline="-", what_you_need_to_know=draft.what_you_need_to_know, worth_a_closer_look=draft.worth_a_closer_look)
+    if missing := [i for i in cited if i not in by_id]:
+        raise ValueError(f"the draft cites items that were not supplied: {missing}")
+    blocks, _ = render_items([by_id[i] for i in cited])
+    asked = "\n".join(f"- {p}" for p in problems)
     prompt = (
         f"Current headline:\n{escape(draft.headline)}\n\n"
-        f"Problems to resolve:\n{escape(chr(10).join(f'- {p}' for p in problems))}\n\n"
-        f"The digest's sentences (JSON; the headline field is a placeholder):\n{escape(body.model_dump_json())}\n\n"
+        f"Problems to resolve:\n{escape(asked)}\n\n"
+        f"The digest's sentences (JSON):\n{escape(draft.model_dump_json(exclude={'headline'}))}\n\n"
         f"Items the digest cited:\n\n{blocks}"
     )
     result = client.complete(

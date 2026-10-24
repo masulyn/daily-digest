@@ -102,8 +102,6 @@ promotional). Report nothing about the other sentences. Never write a URL. If th
 sound, return no issues.
 """
 HEADLINE_REVIEW_MAX_TOKENS = 1000
-# Draft-level problems the mechanical layer anchors to the headline but a new headline cannot fix.
-_WHOLE_DRAFT_PROBLEM = re.compile(r"^Remove this sentence|the sections have \d+ words|has no valid sentences|the revision adds sentences")
 
 
 class ReviewFailed(Exception):
@@ -300,46 +298,59 @@ def review_headline(
     """One model check of a rewritten headline. Returns the blocking headline issues; others are ignored."""
     blocks, _ = render_items(_cited_items(draft, items))
     asked = "\n".join(f"- {escape(p)}" for p in problems)
-    messages = [{"role": "user", "content": f"{blocks}\n\n{_draft_block(draft)}\n\nThe problem the new headline must resolve:\n{asked}"}]
+    messages = [{"role": "user", "content": f"{blocks}\n\n{_draft_block(draft)}\n\nThe problems the new headline must resolve:\n{asked}"}]
     result = client.complete(
         system=HEADLINE_REVIEW_PROMPT, messages=messages, schema=ReviewResult,
         max_tokens=min(client.max_output_tokens, HEADLINE_REVIEW_MAX_TOKENS),
     )
+    # An issue whose text holds a URL still counts: dropping it would be the only thing between it and approval.
     return [
-        i.model_copy(update={"index": None, "required_change": _one_line(i.required_change)})
+        i.model_copy(update={
+            "index": None,
+            "required_change": "(removed: it contained a URL)" if has_url(i.required_change) else _one_line(i.required_change),
+        })
         for i in result.parsed.issues
-        if i.severity == "blocking" and i.section == "headline" and not has_url(i.required_change)
+        if i.severity == "blocking" and i.section == "headline"
     ]
 
 
-def _headline_only(blocking: list[ReviewIssue]) -> bool:
-    """True when every blocking issue is about the headline itself, so a new headline could clear them all."""
-    return bool(blocking) and all(
-        i.section == "headline" and not _WHOLE_DRAFT_PROBLEM.search(i.required_change) for i in blocking
-    )
+def _headline_only(draft: Draft, blocking: list[ReviewIssue], sent: dict[str, SentItem], min_words: int) -> bool:
+    """True when every blocking issue is about the headline itself, so a new headline could clear them all.
+
+    The mechanical layer anchors draft-level problems (length, an empty section) to the headline too; any
+    problem `check_draft` raises that is not a headline check rules the rewrite out.
+    """
+    if not blocking or any(i.section != "headline" for i in blocking):
+        return False
+    whole_draft = set(check_draft(draft, sent, min_words=min_words).problems) - set(headline_problems(draft.headline, sent))
+    return not whole_draft
 
 
 def _repair_headline(
     draft: Draft, blocking: list[ReviewIssue], sent_items: list[CandidateItem], sent: dict[str, SentItem],
-    client: BudgetedClient, round_number: int,
+    client: BudgetedClient, rounds: int, min_words: int,
 ) -> tuple[Draft | None, list[str], ReviewRound | None]:
-    """Rewrite the headline once and check it once. The sentences never change. None when it is not fixed."""
+    """Rewrite the headline once and check it once. The sentences never change. None when it is not fixed.
+
+    The new draft goes through the whole mechanical layer again, not only the headline checks, so nothing
+    the code would block can be approved this way.
+    """
     problems = [_one_line(i.required_change) for i in blocking]
     try:
         headline = rewrite_headline(draft, problems, sent_items, client)
     except LLMError as error:
         return None, [f"the headline rewrite failed: {error}"], None
-    if failed := headline_problems(headline, sent):
-        return None, [f"the rewritten headline failed the checks: {p}" for p in failed], None
     candidate = draft.model_copy(update={"headline": headline})
+    if failed := [i for i in mechanical_issues(candidate, sent, min_words) if i.severity == "blocking"]:
+        return None, [f"the rewritten headline failed the checks: {i.required_change}" for i in failed], None
     try:
         issues = review_headline(candidate, problems, sent_items, client)
     except LLMError as error:
         return None, [f"the rewritten headline could not be reviewed: {error}"], None
-    checked = ReviewRound(number=round_number, draft=candidate, issues=issues)
+    checked = ReviewRound(number=rounds + 1, draft=candidate, issues=issues)
     if issues:
         return None, ["the rewritten headline still has a blocking issue, so the digest fails"], checked
-    return candidate, [f"the headline was rewritten after round {round_number - 1} and passed a check of that issue"], checked
+    return candidate, [f"the headline was rewritten after round {rounds} and passed a check of that issue"], checked
 
 
 def run_review(
@@ -410,9 +421,14 @@ def run_review(
         return ReviewOutcome(draft, ReviewSummary(status="unreviewed"), notes)
     last_draft, last_issues = reviewed
     last_blocking = [i for i in last_issues if i.severity == "blocking"]
-    # A headline cannot be fixed by removing a sentence, so it gets one targeted rewrite unless the budget ran out.
-    if _headline_only(last_blocking) and stop in ("rounds", "revision") and not client.degraded():
-        repaired, repair_notes, checked = _repair_headline(last_draft, last_blocking, sent_items, sent, client, rounds + 1)
+    # Not after a budget stop or a reviewer error: the check the new headline needs could not run either.
+    if (
+        stop in ("rounds", "revision") and not client.degraded()
+        and _headline_only(last_draft, last_blocking, sent, min_words)
+    ):
+        repaired, repair_notes, checked = _repair_headline(
+            last_draft, last_blocking, sent_items, sent, client, rounds, min_words
+        )
         notes += repair_notes
         history += [checked] if checked else []
         if repaired is not None:

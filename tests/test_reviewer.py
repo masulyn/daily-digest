@@ -497,6 +497,36 @@ def test_a_rewrite_that_errors_leaves_the_draft_failed_with_a_note():
     assert outcome.summary.status == "failed" and "the headline rewrite failed: the model API returned HTTP 400" in outcome.notes
 
 
+def test_a_rewrite_still_runs_after_a_failed_revision():
+    blocked = ReviewResult(issues=[HEADLINE_ISSUE])
+    outcome, client = run([blocked, PermanentLLMError("the model API returned HTTP 400"), HeadlineRewrite(headline=NEW_HEADLINE), approve()], rounds=2)
+    assert outcome.summary.status == "approved" and outcome.draft.headline == NEW_HEADLINE
+    assert "the revision failed: the model API returned HTTP 400" in outcome.notes and len(client.requests) == 4
+
+
+def test_no_rewrite_after_a_reviewer_error_because_the_check_could_not_run_either():
+    blocked = ReviewResult(issues=[HEADLINE_ISSUE])
+    outcome, client = run([blocked, make_draft(300), PermanentLLMError("the model API returned HTTP 500")], rounds=2)
+    assert outcome.summary.status == "failed" and len(client.requests) == 3
+
+
+def test_a_headline_check_that_errors_fails_the_draft_with_a_note():
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), PermanentLLMError("the model API returned HTTP 500")], rounds=1)
+    assert outcome.summary.status == "failed" and "the rewritten headline could not be reviewed: the model API returned HTTP 500" in outcome.notes
+
+
+def test_a_budget_refusal_of_the_rewrite_fails_the_draft_with_a_note():
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), BudgetExceeded("budget exceeded, no model call made: x")], rounds=1)
+    assert outcome.summary.status == "failed"
+    assert "the headline rewrite failed: budget exceeded, no model call made: x" in outcome.notes
+
+
+def test_a_headline_check_issue_holding_a_url_still_blocks():
+    with_url = ReviewResult(issues=[HEADLINE_ISSUE.model_copy(update={"required_change": "See https://evil.example.org/x"})])
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), with_url], rounds=1)
+    assert outcome.summary.status == "failed" and outcome.rounds[-1].issues[0].required_change == "(removed: it contained a URL)"
+
+
 def test_a_headline_issue_that_the_revision_fixes_is_approved():
     outcome, client = run([ReviewResult(issues=[HEADLINE_ISSUE]), make_draft(300), approve()], rounds=2)
     assert outcome.summary.status == "approved" and outcome.draft is not None and len(client.requests) == 3
