@@ -9,7 +9,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-from .contracts import CandidateItem, Draft, DraftIssue, DraftSentence
+from .contracts import CandidateItem, Draft, DraftIssue, DraftSentence, HeadlineRewrite
 from .digest import sentences, word_count
 from .llm import BudgetedClient, OutputInvalidError
 from .llm.metered import estimate_input_tokens
@@ -165,6 +165,19 @@ revised draft.
 
 {light}{_style_rules(aim is not None)}"""
 
+
+HEADLINE_PROMPT = f"""\
+You are rewriting only the headline of a daily digest for enterprise AI leaders. You receive the \
+current headline, the problems a reviewer found with it, the digest's sentences, and the items the \
+digest cited.
+
+{_DATA_RULES}
+Write one new headline that resolves every problem. It may state only what the digest's sentences \
+state, at no greater strength: keep a source's hedges, and when a figure is a source's own claim or \
+a forecast, say whose it is. Write it about the single most important development. It is at most \
+{MAX_HEADLINE_WORDS} words; aim for {AIM_HEADLINE_WORDS}. No quotation marks, no URL, and never the \
+characters < or >. Return only the new headline."""
+HEADLINE_MAX_TOKENS = 300  # one line; keeps the pre-call reservation small
 
 SYSTEM_PROMPT = writer_prompt()
 REVISE_PROMPT = revise_prompt()
@@ -399,17 +412,7 @@ def check_draft(
             problems.append(f"{name} has no valid sentences")
 
     headline = _plain(draft.headline)
-    if has_url(headline) or _MARKER.search(headline):
-        problems.append("the headline contains a URL or a citation marker")
-    if _unsupported_host(headline, [normalize(f"{i.title} {i.source} {i.body}") for i in sent.values()]):
-        problems.append("the headline mentions a host name that is not in the items")
-    if _quoted_passages(headline):
-        problems.append("the headline contains a quotation; quotes belong in the sections")
-    if len(headline.split()) > MAX_HEADLINE_WORDS:
-        problems.append(f"the headline has {len(headline.split())} words; the limit is {MAX_HEADLINE_WORDS}")
-
-    if not headline:
-        problems.append("the headline is empty")
+    problems += headline_problems(draft.headline, sent)
     checked = Draft(headline=headline or "(no headline)", **kept)
     words = word_count(checked)
     if not min_words <= words <= MAX_BODY_WORDS:
@@ -420,6 +423,23 @@ def check_draft(
     ):
         problems.append("the revision adds sentences; it may only reword or remove")
     return Checked(checked, notes, problems, dropped, flagged)
+
+
+def headline_problems(headline: str, sent: dict[str, SentItem]) -> list[str]:
+    """The mechanical headline checks, in fixed wording."""
+    headline = _plain(headline)
+    problems = []
+    if has_url(headline) or _MARKER.search(headline):
+        problems.append("the headline contains a URL or a citation marker")
+    if _unsupported_host(headline, [normalize(f"{i.title} {i.source} {i.body}") for i in sent.values()]):
+        problems.append("the headline mentions a host name that is not in the items")
+    if _quoted_passages(headline):
+        problems.append("the headline contains a quotation; quotes belong in the sections")
+    if len(headline.split()) > MAX_HEADLINE_WORDS:
+        problems.append(f"the headline has {len(headline.split())} words; the limit is {MAX_HEADLINE_WORDS}")
+    if not headline:
+        problems.append("the headline is empty")
+    return problems
 
 
 def _feedback(checked_problems: list[str], notes: list[str]) -> str:
@@ -557,3 +577,29 @@ def revise(
         cited_by_section,
         min_words=floor or MIN_BODY_WORDS,
     )
+
+
+def rewrite_headline(
+    draft: Draft, problems: list[str], items: list[CandidateItem], client: BudgetedClient
+) -> str:
+    """One model call for a new headline; the sentences are sent as context and never change.
+
+    Only the items the draft cites are sent: the headline may state only what its sentences state.
+    """
+    cited = list(dict.fromkeys(i for sentence in sentences(draft) for i in sentence.item_ids))
+    by_id = {item.id: item for item in items}
+    if missing := [i for i in cited if i not in by_id]:
+        raise ValueError(f"the draft cites items that were not supplied: {missing}")
+    blocks, _ = render_items([by_id[i] for i in cited])
+    asked = "\n".join(f"- {p}" for p in problems)
+    prompt = (
+        f"Current headline:\n{escape(draft.headline)}\n\n"
+        f"Problems to resolve:\n{escape(asked)}\n\n"
+        f"The digest's sentences (JSON):\n{escape(draft.model_dump_json(exclude={'headline'}))}\n\n"
+        f"Items the digest cited:\n\n{blocks}"
+    )
+    result = client.complete(
+        system=HEADLINE_PROMPT, messages=[{"role": "user", "content": prompt}], schema=HeadlineRewrite,
+        max_tokens=min(client.max_output_tokens, HEADLINE_MAX_TOKENS),
+    )
+    return _plain(result.parsed.headline)

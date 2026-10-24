@@ -4,12 +4,13 @@ from decimal import Decimal
 
 
 from daily_digest.config import load_llm_settings
-from daily_digest.contracts import Draft, ReviewIssue, ReviewResult
-from daily_digest.editor import REVISE_PROMPT, render_items
+from daily_digest.contracts import Draft, HeadlineRewrite, ReviewIssue, ReviewResult
+from daily_digest.editor import HEADLINE_PROMPT, REVISE_PROMPT, render_items
 from daily_digest.digest import build_digest
 from daily_digest.graph import DigestState, editor_writer, run_digest
 from daily_digest.llm import BudgetExceeded, MeteredClient, MockClient, PermanentLLMError, Usage
 from daily_digest.reviewer import (
+    HEADLINE_REVIEW_PROMPT,
     MAX_ISSUES,
     REVIEW_PROMPT,
     mechanical_issues,
@@ -432,31 +433,116 @@ def test_an_over_long_required_change_is_clipped_not_fatal():
     assert outcome.summary.advisory[0] == "headline (tone): " + "x" * 300
 
 
-def test_a_mechanical_headline_problem_cannot_be_removed_so_the_draft_fails():
-    outcome, _ = run([approve()], draft=make_draft(300, headline=" ".join(["word"] * 13)), rounds=1)
-    assert outcome.summary.status == "failed" and outcome.draft is None
-    assert [n for n in outcome.notes if "13 words" in n] == ["could not repair the draft: the headline has 13 words; the limit is 12"]
+HEADLINE_ISSUE = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Say it is Gartner's forecast.")
+NEW_HEADLINE = "Gartner forecasts slower growth in enterprise AI spending"
 
 
-def test_an_unresolved_blocking_headline_issue_fails_the_draft_instead_of_publishing_the_headline():
-    headline_issue = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Soften it.")
-    outcome, _ = run([ReviewResult(issues=[headline_issue])], rounds=1)
+def test_a_mechanical_headline_problem_gets_one_rewrite_and_a_rewrite_that_still_fails_the_checks_fails_the_draft():
+    long_headline = " ".join(["word"] * 13)
+    outcome, client = run([approve(), HeadlineRewrite(headline=long_headline)], draft=make_draft(300, headline=long_headline), rounds=1)
     assert outcome.summary.status == "failed" and outcome.draft is None
-    assert outcome.summary.unresolved == ["headline (overstated): Soften it."]
-    assert any("headline (overstated): Soften it. cannot be fixed by removing a sentence" in n for n in outcome.notes)
+    assert "the rewritten headline failed the checks: the headline has 13 words; the limit is 12" in outcome.notes
+    assert len(client.requests) == 2  # the review and the rewrite; no check of a headline that failed the checks
+
+
+def test_a_headline_issue_that_survives_the_last_round_is_rewritten_and_checked_once_and_nothing_else_changes():
+    outcome, client = run([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), approve()], rounds=1)
+    assert outcome.summary.status == "approved" and outcome.draft.headline == NEW_HEADLINE
+    original = make_draft(300)
+    assert outcome.draft.what_you_need_to_know == original.what_you_need_to_know
+    assert outcome.draft.worth_a_closer_look == original.worth_a_closer_look
+    assert [r["system"] for r in client.requests] == [REVIEW_PROMPT, HEADLINE_PROMPT, HEADLINE_REVIEW_PROMPT]
+    rewrite = client.requests[1]["messages"][0]["content"]
+    assert make_draft(300).headline in rewrite and "Say it is Gartner's forecast." in rewrite and "<<<ITEM a1>>>" in rewrite
+    check = client.requests[2]["messages"][0]["content"]
+    assert NEW_HEADLINE in check and "Say it is Gartner's forecast." in check
+    assert outcome.summary.unresolved == [] and any("headline was rewritten after round 1" in n for n in outcome.notes)
+    assert [r.number for r in outcome.rounds] == [1, 2] and outcome.rounds[1].draft.headline == NEW_HEADLINE
+
+
+def test_a_rewritten_headline_that_still_has_a_blocking_issue_fails_the_draft():
+    still = ReviewResult(issues=[HEADLINE_ISSUE.model_copy(update={"required_change": "Still a flat claim."})])
+    outcome, client = run([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), still], rounds=1)
+    assert outcome.summary.status == "failed" and outcome.draft is None
+    assert outcome.summary.unresolved == ["headline (overstated): Say it is Gartner's forecast."]
+    assert "the rewritten headline still has a blocking issue, so the digest fails" in outcome.notes
+    assert len(client.requests) == 3
+
+
+def test_issues_the_headline_check_raises_about_other_sentences_are_ignored():
+    elsewhere = ReviewResult(issues=[ReviewIssue(section="what_you_need_to_know", index=0, severity="blocking", category="tone", required_change="x")])
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), elsewhere], rounds=1)
+    assert outcome.summary.status == "approved"
+
+
+def test_a_headline_issue_after_every_round_gets_the_rewrite_after_the_last_one_only():
+    blocked = ReviewResult(issues=[HEADLINE_ISSUE])
+    outcome, client = run([blocked, make_draft(300), blocked, make_draft(300), blocked, HeadlineRewrite(headline=NEW_HEADLINE), approve()], rounds=3)
+    assert outcome.summary.status == "approved" and outcome.summary.rounds == 3 and len(client.requests) == 7
+
+
+def test_no_rewrite_when_a_sentence_issue_is_also_left():
+    sentence = ReviewIssue(section="what_you_need_to_know", index=1, severity="blocking", category="unsupported", required_change="Cut.")
+    outcome, client = run([ReviewResult(issues=[HEADLINE_ISSUE, sentence])], rounds=1)
+    assert outcome.summary.status == "failed" and len(client.requests) == 1
+
+
+def test_no_rewrite_for_a_length_problem_the_mechanical_layer_anchors_to_the_headline():
+    outcome, client = run([approve()], draft=make_draft(150), rounds=1)
+    assert outcome.summary.status == "failed" and len(client.requests) == 1
+
+
+def test_a_rewrite_that_errors_leaves_the_draft_failed_with_a_note():
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), PermanentLLMError("the model API returned HTTP 400")], rounds=1)
+    assert outcome.summary.status == "failed" and "the headline rewrite failed: the model API returned HTTP 400" in outcome.notes
+
+
+def test_a_rewrite_still_runs_after_a_failed_revision():
+    blocked = ReviewResult(issues=[HEADLINE_ISSUE])
+    outcome, client = run([blocked, PermanentLLMError("the model API returned HTTP 400"), HeadlineRewrite(headline=NEW_HEADLINE), approve()], rounds=2)
+    assert outcome.summary.status == "approved" and outcome.draft.headline == NEW_HEADLINE
+    assert "the revision failed: the model API returned HTTP 400" in outcome.notes and len(client.requests) == 4
+
+
+def test_no_rewrite_after_a_reviewer_error_because_the_check_could_not_run_either():
+    blocked = ReviewResult(issues=[HEADLINE_ISSUE])
+    outcome, client = run([blocked, make_draft(300), PermanentLLMError("the model API returned HTTP 500")], rounds=2)
+    assert outcome.summary.status == "failed" and len(client.requests) == 3
+
+
+def test_a_headline_check_that_errors_fails_the_draft_with_a_note():
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), PermanentLLMError("the model API returned HTTP 500")], rounds=1)
+    assert outcome.summary.status == "failed" and "the rewritten headline could not be reviewed: the model API returned HTTP 500" in outcome.notes
+
+
+def test_a_budget_refusal_of_the_rewrite_fails_the_draft_with_a_note():
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), BudgetExceeded("budget exceeded, no model call made: x")], rounds=1)
+    assert outcome.summary.status == "failed"
+    assert "the headline rewrite failed: budget exceeded, no model call made: x" in outcome.notes
+
+
+def test_a_headline_check_issue_holding_a_url_still_blocks():
+    with_url = ReviewResult(issues=[HEADLINE_ISSUE.model_copy(update={"required_change": "See https://evil.example.org/x"})])
+    outcome, _ = run([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), with_url], rounds=1)
+    assert outcome.summary.status == "failed" and outcome.rounds[-1].issues[0].required_change == "(removed: it contained a URL)"
 
 
 def test_a_headline_issue_that_the_revision_fixes_is_approved():
-    headline_issue = ReviewIssue(section="headline", severity="blocking", category="overstated", required_change="Soften it.")
-    outcome, client = run([ReviewResult(issues=[headline_issue]), make_draft(300), approve()], rounds=2)
-    assert outcome.summary.status == "approved" and outcome.draft is not None
+    outcome, client = run([ReviewResult(issues=[HEADLINE_ISSUE]), make_draft(300), approve()], rounds=2)
+    assert outcome.summary.status == "approved" and outcome.draft is not None and len(client.requests) == 3
 
 
-def test_a_headline_issue_that_survives_every_round_fails_the_draft():
-    headline_issue = ReviewIssue(section="headline", severity="blocking", category="unsupported", required_change="Cut it.")
-    blocked_every_round = ReviewResult(issues=[headline_issue])
-    outcome, _ = run([blocked_every_round, make_draft(300), blocked_every_round, make_draft(300), blocked_every_round], rounds=3)
-    assert outcome.summary.status == "failed" and outcome.draft is None and outcome.summary.rounds == 3
+def test_degraded_mode_skips_the_rewrite_and_the_extra_calls_count_toward_the_budget():
+    heavy = Usage(input_tokens=30_000, output_tokens=1_000)  # $0.07 a call
+    degraded = metered([ReviewResult(issues=[HEADLINE_ISSUE])], heavy, rounds=1)
+    degraded.spent = Decimal("0.14")  # with the review: $0.21, past 80% of $0.25
+    outcome = run_review(make_draft(300), items(), degraded)
+    assert outcome.summary.status == "failed" and len(degraded._inner.requests) == 1
+    light = Usage(input_tokens=1_000, output_tokens=100)
+    counted = metered([ReviewResult(issues=[HEADLINE_ISSUE]), HeadlineRewrite(headline=NEW_HEADLINE), approve()], light, rounds=1)
+    outcome = run_review(make_draft(300), items(), counted)
+    assert outcome.summary.status == "approved" and counted.calls == 3 and counted.spent > 0
+    assert counted.usage_line().startswith("usage: 3 call(s)")
 
 
 def test_a_removable_sentence_issue_still_gives_not_converged():

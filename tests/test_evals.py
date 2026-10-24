@@ -257,7 +257,7 @@ def test_a_canary_in_the_digest_fails_the_case_and_one_that_is_absent_passes(tmp
 def test_results_record_the_config_prompt_hashes_and_rubric_version(tmp_path, monkeypatch):
     results, run_dir = run([small_case()], tmp_path)
     saved = json.loads((run_dir / "results.json").read_text())
-    assert set(saved["prompt_hashes"]) == {"writer", "revise", "writer_light_day", "revise_light_day", "review", "judge"} and saved["rubric_version"] == RUBRIC.version
+    assert set(saved["prompt_hashes"]) == {"writer", "revise", "writer_light_day", "revise_light_day", "review", "judge", "headline_rewrite", "headline_review"} and saved["rubric_version"] == RUBRIC.version
     assert saved["config"]["generator_model"] == SETTINGS.model and saved["config"]["judge_model"] == "claude-opus-5-5"
     assert "claude-opus-5-5" in saved["config"]["prices"]
     case = saved["cases"][0]
@@ -358,7 +358,7 @@ def test_a_blocking_headline_issue_that_survives_every_round_is_explained_in_the
     assert "review: FAILED after 3 round(s)" in failure and "unresolved: headline (unsupported): Soften" in failure
     assert "cannot be fixed by removing a sentence" in failure and "\x1b" not in failure
     review = (folder / "review.txt").read_text()
-    assert review.count("== round") == 6 and "- blocking unsupported at headline: Soften" in review and "\x1b" not in review
+    assert review.count("== round") == 8 and "- blocking unsupported at headline: Soften" in review  # 3 rounds and the headline check and "\x1b" not in review
     assert Draft.model_validate_json((folder / "draft.json").read_text()).headline == HEADLINE
     notes = (folder / "notes.txt").read_text().splitlines()
     assert len(notes) == len(set(notes))  # each note once
