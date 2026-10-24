@@ -8,7 +8,7 @@ import re
 
 from pydantic import BaseModel
 
-from ..contracts import Draft, DraftSentence, ReviewResult
+from ..contracts import Draft, DraftSentence, HeadlineRewrite, ReviewResult
 from ..llm.base import LLMResult, T, Usage
 from .models import DIMENSIONS, CoversMust, JudgeScore, JudgeVerdict
 
@@ -37,6 +37,8 @@ class ScriptedClient:
         reply: BaseModel
         if schema is Draft:
             reply = _draft_from(prompt)
+        elif schema is HeadlineRewrite:
+            reply = HeadlineRewrite(headline=HEADLINE)
         elif schema is ReviewResult:
             reply = ReviewResult(verdict="approve")
         elif schema is JudgeVerdict:

@@ -13,12 +13,13 @@ from ..config import PROJECT_ROOT, EvalSettings, LLMSettings
 from ..contracts import Draft, ReviewRound
 from ..digest import render_markdown
 from ..editor import (
-    LIGHT_REVISE_PROMPT, LIGHT_SYSTEM_PROMPT, REVISE_PROMPT, SYSTEM_PROMPT, WriterFailed, render_items, word_count,
+    HEADLINE_PROMPT, LIGHT_REVISE_PROMPT, LIGHT_SYSTEM_PROMPT, REVISE_PROMPT, SYSTEM_PROMPT, WriterFailed, render_items,
+    word_count,
 )
 from ..graph import DigestState, run_digest
 from ..llm import LLMClient, LLMError, MeteredClient
 from ..publisher import markdown_for
-from ..reviewer import REVIEW_PROMPT
+from ..reviewer import HEADLINE_REVIEW_PROMPT, REVIEW_PROMPT
 from ..store import Store
 from .judge import JudgeFailed, judge_digest, judge_system_prompt
 from .models import Case, CaseResult, RunConfig, RunResults
@@ -41,6 +42,7 @@ def prompt_hashes(rubric: Rubric) -> dict[str, str]:
         "writer": digest(SYSTEM_PROMPT), "revise": digest(REVISE_PROMPT),
         "writer_light_day": digest(LIGHT_SYSTEM_PROMPT), "revise_light_day": digest(LIGHT_REVISE_PROMPT),
         "review": digest(REVIEW_PROMPT), "judge": digest(judge_system_prompt(rubric)),
+        "headline_rewrite": digest(HEADLINE_PROMPT), "headline_review": digest(HEADLINE_REVIEW_PROMPT),
     }
 
 

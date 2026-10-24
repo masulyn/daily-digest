@@ -91,6 +91,12 @@ class Draft(BaseModel):
     worth_a_closer_look: list[DraftSentence]
 
 
+class HeadlineRewrite(BaseModel):
+    """A new headline, and nothing else: the rest of the digest is not the model's to change here."""
+
+    headline: str = Field(min_length=1)
+
+
 class DraftIssue(BaseModel):
     """A required change to one sentence (or to the headline when `index` is None)."""
 
